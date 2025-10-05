@@ -14,8 +14,17 @@ const app = express();
    =========================== */
 app.use(express.json());
 
+/* --- CORS: permite local y producción --- */
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ||
+  'http://localhost:3000,https://connectful.es,https://www.connectful.es'
+).split(',').map(s => s.trim());
+
 app.use(cors({
-  origin: 'http://localhost:3000',
+  origin(origin, cb) {
+    // Permite peticiones sin origin (curl/Postman) y las que estén en la lista
+    if (!origin || ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+    return cb(new Error('CORS: Origin not allowed'), false);
+  },
   methods: ['GET','POST','OPTIONS'],
   allowedHeaders: ['Content-Type','Authorization']
 }));
@@ -28,7 +37,7 @@ app.use((req, res, next) => {
 
 /* ====== ENV ====== */
 const {
-  PORT = 4000,
+  PORT = process.env.PORT || 4000,
   JWT_SECRET = 'devsecret',
   SMTP_HOST,
   SMTP_PORT,
@@ -47,7 +56,9 @@ const transporter = nodemailer.createTransport({
   secure: smtpPort === 465,     // true solo si 465
   requireTLS: smtpPort === 587, // recomendado para 587
   auth: { user: SMTP_USER, pass: SMTP_PASS },
-  connectionTimeout: 15000
+  connectionTimeout: 15000,
+  logger: true,                 // logs detallados en Render
+  debug: true
 });
 
 // Diagnóstico SMTP al arrancar (imprescindible)
@@ -76,6 +87,9 @@ const deleteCodesForUser = db.prepare('DELETE FROM email_codes WHERE user_id = ?
 /* ===========================
    Endpoints de prueba (debug)
    =========================== */
+app.get('/', (req, res) => {
+  res.status(200).send('OK - connectful-backend ' + new Date().toISOString());
+});
 app.get('/ping', (req, res) => res.json({ ok: true, now: Date.now() }));
 app.post('/echo', (req, res) => res.json({ ok: true, youSent: req.body }));
 
@@ -102,6 +116,9 @@ app.post('/api/auth/register', async (req, res) => {
     const exp = nowSec() + 15 * 60; // 15 minutos
     insertCode.run(userId, codeHash, exp);
 
+    // (opcional para pruebas): logea el código si necesitas verificar sin email
+    // console.log('DEBUG verification code for', emailNorm, '→', code);
+
     // En OVH, que el "from" sea el buzón autenticado
     const mail = await transporter.sendMail({
       from: SMTP_USER,                              // usa el buzón real autenticado
@@ -112,7 +129,7 @@ app.post('/api/auth/register', async (req, res) => {
       html: `<p>Tu código es:</p><h2 style="font-family:system-ui,Segoe UI,Roboto"> ${code} </h2><p>Expira en 15 minutos.</p>`
     });
 
-    console.log('Mail OK →', mail.messageId, 'a', emailNorm);
+    console.log('Mail OK →', mail.messageId, 'a', emailNorm, 'smtpResponse:', mail.response);
     res.json({ ok: true, message: 'Código enviado a tu email.' });
   } catch (err) {
     // nodemailer a veces trae error.response; mostramos algo útil
@@ -160,4 +177,4 @@ app.post('/api/auth/login', async (req, res) => {
 /* ===========================
    Arranque
    =========================== */
-app.listen(PORT, () => console.log('✅ Servidor en http://localhost:' + PORT));
+app.listen(PORT, () => console.log(`✅ Server listening on port ${PORT}`));
