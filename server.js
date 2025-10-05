@@ -10,18 +10,17 @@ const db = require('./db');
 const app = express();
 
 /* ===========================
-   Middlewares base (en orden)
+   Middlewares base
    =========================== */
 app.use(express.json());
 
-/* --- CORS: permite local y producción --- */
+/* --- CORS: local + producción --- */
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ||
   'http://localhost:3000,https://connectful.es,https://www.connectful.es'
 ).split(',').map(s => s.trim());
 
 app.use(cors({
   origin(origin, cb) {
-    // Permite peticiones sin origin (curl/Postman) y las que estén en la lista
     if (!origin || ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
     return cb(new Error('CORS: Origin not allowed'), false);
   },
@@ -29,7 +28,7 @@ app.use(cors({
   allowedHeaders: ['Content-Type','Authorization']
 }));
 
-// Log simple para ver cada petición y su body
+// Log de cada petición
 app.use((req, res, next) => {
   console.log(`${req.method} ${req.url}`, 'body:', req.body);
   next();
@@ -43,25 +42,26 @@ const {
   SMTP_PORT,
   SMTP_USER,
   SMTP_PASS,
-  FROM_EMAIL
+  FROM_EMAIL,
+  DEV_RETURN_CODE // si "true", devuelve el código en /register para pruebas
 } = process.env;
 
 /* ===========================
-   Nodemailer (OVH)
+   Nodemailer
    =========================== */
-const smtpPort = Number(SMTP_PORT || 587); // 587 por defecto
+const smtpPort = Number(SMTP_PORT || 587);
 const transporter = nodemailer.createTransport({
-  host: SMTP_HOST,              // p.ej. ssl0.ovh.net
-  port: smtpPort,               // 587 o 465
-  secure: smtpPort === 465,     // true solo si 465
-  requireTLS: smtpPort === 587, // recomendado para 587
+  host: SMTP_HOST,                  // ej: ssl0.ovh.net o pro2.mail.ovh.net
+  port: smtpPort,                   // 465 (SSL) o 587 (STARTTLS)
+  secure: smtpPort === 465,         // SSL solo si 465
+  requireTLS: smtpPort === 587,     // STARTTLS si 587
   auth: { user: SMTP_USER, pass: SMTP_PASS },
   connectionTimeout: 15000,
-  logger: true,                 // logs detallados en Render
+  logger: true,                     // logs SMTP en Render
   debug: true
 });
 
-// Diagnóstico SMTP al arrancar (imprescindible)
+// Diagnóstico SMTP al arrancar
 transporter.verify((err, ok) => {
   console.log('SMTP listo?', ok, err?.message || '');
 });
@@ -76,20 +76,18 @@ const genCode = () => String(Math.floor(100000 + Math.random() * 900000));
 /* ===========================
    SQL preparada
    =========================== */
-const getUserByEmail = db.prepare('SELECT * FROM users WHERE email = ?');
-const insertUser = db.prepare('INSERT INTO users (name, email, password_hash, age, formato) VALUES (?,?,?,?,?)');
-const markVerified = db.prepare('UPDATE users SET is_verified = 1 WHERE id = ?');
-const insertCode = db.prepare('INSERT INTO email_codes (user_id, code_hash, expires_at) VALUES (?,?,?)');
-const getLatestCode = db.prepare('SELECT * FROM email_codes WHERE user_id = ? ORDER BY id DESC LIMIT 1');
-const incAttempts = db.prepare('UPDATE email_codes SET attempts = attempts + 1 WHERE id = ?');
+const getUserByEmail   = db.prepare('SELECT * FROM users WHERE email = ?');
+const insertUser       = db.prepare('INSERT INTO users (name, email, password_hash, age, formato) VALUES (?,?,?,?,?)');
+const markVerified     = db.prepare('UPDATE users SET is_verified = 1 WHERE id = ?');
+const insertCode       = db.prepare('INSERT INTO email_codes (user_id, code_hash, expires_at) VALUES (?,?,?)');
+const getLatestCode    = db.prepare('SELECT * FROM email_codes WHERE user_id = ? ORDER BY id DESC LIMIT 1');
+const incAttempts      = db.prepare('UPDATE email_codes SET attempts = attempts + 1 WHERE id = ?');
 const deleteCodesForUser = db.prepare('DELETE FROM email_codes WHERE user_id = ?');
 
 /* ===========================
-   Endpoints de prueba (debug)
+   Endpoints debug
    =========================== */
-app.get('/', (req, res) => {
-  res.status(200).send('OK - connectful-backend ' + new Date().toISOString());
-});
+app.get('/',   (req, res) => res.status(200).send('OK - connectful-backend ' + new Date().toISOString()));
 app.get('/ping', (req, res) => res.json({ ok: true, now: Date.now() }));
 app.post('/echo', (req, res) => res.json({ ok: true, youSent: req.body }));
 
@@ -116,26 +114,39 @@ app.post('/api/auth/register', async (req, res) => {
     const exp = nowSec() + 15 * 60; // 15 minutos
     insertCode.run(userId, codeHash, exp);
 
-    // (opcional para pruebas): logea el código si necesitas verificar sin email
-    // console.log('DEBUG verification code for', emailNorm, '→', code);
+    // Log de ayuda mientras ajustamos SMTP
+    console.log('DEBUG verification code for', emailNorm, '→', code);
 
-    // En OVH, que el "from" sea el buzón autenticado
-    const mail = await transporter.sendMail({
-      from: SMTP_USER,                              // usa el buzón real autenticado
-      replyTo: FROM_EMAIL || SMTP_USER,             // opcional: nombre bonito si lo configuras
-      to: emailNorm,
-      subject: 'Tu código de verificación',
-      text: `Tu código de verificación es: ${code}. Expira en 15 minutos.`,
-      html: `<p>Tu código es:</p><h2 style="font-family:system-ui,Segoe UI,Roboto"> ${code} </h2><p>Expira en 15 minutos.</p>`
+    // Enviar correo (no tiramos el registro si falla)
+    let mailSent = false;
+    try {
+      const mail = await transporter.sendMail({
+        from: SMTP_USER,                              // buzón autenticado
+        replyTo: FROM_EMAIL || SMTP_USER,
+        to: emailNorm,
+        subject: 'Tu código de verificación',
+        text: `Tu código de verificación es: ${code}. Expira en 15 minutos.`,
+        html: `<p>Tu código es:</p><h2 style="font-family:system-ui,Segoe UI,Roboto">${code}</h2><p>Expira en 15 minutos.</p>`
+      });
+      console.log('Mail OK →', mail.messageId, 'a', emailNorm, 'smtpResponse:', mail.response);
+      mailSent = true;
+    } catch (sendErr) {
+      const emsg = sendErr?.response?.toString?.() || sendErr?.message || String(sendErr);
+      console.error('SMTP sendMail error:', emsg);
+      // No hacemos throw; continuamos y dejamos el código almacenado para que el usuario pueda verificar cuando el email funcione.
+    }
+
+    return res.json({
+      ok: true,
+      message: mailSent
+        ? 'Código enviado a tu email.'
+        : 'Código generado. El envío de email falló (reintentaremos).',
+      ...(String(DEV_RETURN_CODE).toLowerCase() === 'true' ? { dev_code: code } : {})
     });
-
-    console.log('Mail OK →', mail.messageId, 'a', emailNorm, 'smtpResponse:', mail.response);
-    res.json({ ok: true, message: 'Código enviado a tu email.' });
   } catch (err) {
-    // nodemailer a veces trae error.response; mostramos algo útil
     const msg = err?.response?.toString?.() || err?.message || String(err);
     console.error('Error en /register:', msg);
-    res.status(500).json({ ok: false, error: 'Error al registrar usuario' });
+    return res.status(500).json({ ok: false, error: 'Error al registrar usuario' });
   }
 });
 
