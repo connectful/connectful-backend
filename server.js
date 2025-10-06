@@ -49,12 +49,16 @@ const {
 /* ===========================
    Nodemailer
    =========================== */
-const smtpPort = Number(SMTP_PORT || 587);
+const smtpPort = Number(SMTP_PORT || 2525);
+
+// remitente real (dominio autenticado en Brevo)
+const FROM = FROM_EMAIL || '"connectful" <soporte@connectful.es>';
+
 const transporter = nodemailer.createTransport({
-  host: SMTP_HOST,                  // ej: ssl0.ovh.net o pro2.mail.ovh.net
-  port: smtpPort,                   // 465 (SSL) o 587 (STARTTLS)
-  secure: smtpPort === 465,         // SSL solo si 465
-  requireTLS: smtpPort === 587,     // STARTTLS si 587
+  host: SMTP_HOST,                  // smtp-relay.brevo.com
+  port: smtpPort,                   // 2525 (o 587/465)
+  secure: false,                    // 2525/587 => false (465 sería true)
+  requireTLS: smtpPort === 587,     // STARTTLS si usas 587
   auth: { user: SMTP_USER, pass: SMTP_PASS },
   connectionTimeout: 15000,
   logger: true,                     // logs SMTP en Render
@@ -114,15 +118,15 @@ app.post('/api/auth/register', async (req, res) => {
     const exp = nowSec() + 15 * 60; // 15 minutos
     insertCode.run(userId, codeHash, exp);
 
-    // Log de ayuda mientras ajustamos SMTP
+    // Log de ayuda
     console.log('DEBUG verification code for', emailNorm, '→', code);
 
     // Enviar correo (no tiramos el registro si falla)
     let mailSent = false;
     try {
       const mail = await transporter.sendMail({
-        from: SMTP_USER,                              // buzón autenticado
-        replyTo: FROM_EMAIL || SMTP_USER,
+        from: FROM,                                // 👈 remitente real
+        replyTo: FROM,
         to: emailNorm,
         subject: 'Tu código de verificación',
         text: `Tu código de verificación es: ${code}. Expira en 15 minutos.`,
@@ -133,7 +137,7 @@ app.post('/api/auth/register', async (req, res) => {
     } catch (sendErr) {
       const emsg = sendErr?.response?.toString?.() || sendErr?.message || String(sendErr);
       console.error('SMTP sendMail error:', emsg);
-      // No hacemos throw; continuamos y dejamos el código almacenado para que el usuario pueda verificar cuando el email funcione.
+      // seguimos sin romper el registro
     }
 
     return res.json({
