@@ -28,7 +28,7 @@ app.use(cors({
   allowedHeaders: ['Content-Type','Authorization']
 }));
 
-// Log de cada petición
+// Log de cada petición (útil en Render)
 app.use((req, res, next) => {
   console.log(`${req.method} ${req.url}`, 'body:', req.body);
   next();
@@ -57,8 +57,8 @@ const FROM = FROM_EMAIL || '"connectful" <soporte@connectful.es>';
 const transporter = nodemailer.createTransport({
   host: SMTP_HOST,                  // smtp-relay.brevo.com
   port: smtpPort,                   // 2525 (o 587/465)
-  secure: false,                    // 2525/587 => false (465 sería true)
-  requireTLS: smtpPort === 587,     // STARTTLS si usas 587
+  secure: smtpPort === 465,         // SSL solo si 465
+  requireTLS: smtpPort === 587,     // STARTTLS si 587
   auth: { user: SMTP_USER, pass: SMTP_PASS },
   connectionTimeout: 15000,
   logger: true,                     // logs SMTP en Render
@@ -96,7 +96,7 @@ app.get('/ping', (req, res) => res.json({ ok: true, now: Date.now() }));
 app.post('/echo', (req, res) => res.json({ ok: true, youSent: req.body }));
 
 /* ===========================
-   Rutas reales
+   Auth: registro / verificación / login
    =========================== */
 app.post('/api/auth/register', async (req, res) => {
   try {
@@ -118,14 +118,12 @@ app.post('/api/auth/register', async (req, res) => {
     const exp = nowSec() + 15 * 60; // 15 minutos
     insertCode.run(userId, codeHash, exp);
 
-    // Log de ayuda
     console.log('DEBUG verification code for', emailNorm, '→', code);
 
-    // Enviar correo (no tiramos el registro si falla)
     let mailSent = false;
     try {
       const mail = await transporter.sendMail({
-        from: FROM,                                // 👈 remitente real
+        from: FROM,                                // remitente real autenticado
         replyTo: FROM,
         to: emailNorm,
         subject: 'Tu código de verificación',
@@ -137,7 +135,6 @@ app.post('/api/auth/register', async (req, res) => {
     } catch (sendErr) {
       const emsg = sendErr?.response?.toString?.() || sendErr?.message || String(sendErr);
       console.error('SMTP sendMail error:', emsg);
-      // seguimos sin romper el registro
     }
 
     return res.json({
@@ -187,6 +184,106 @@ app.post('/api/auth/login', async (req, res) => {
 
   const token = jwt.sign({ uid: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
   res.json({ ok: true, token });
+});
+
+/* ===========================
+   Auth middleware (JWT)
+   =========================== */
+const auth = (req, res, next) => {
+  try {
+    const h = req.headers.authorization || '';
+    const token = h.startsWith('Bearer ') ? h.slice(7) : null;
+    if (!token) return res.status(401).json({ ok:false, error:'Falta token' });
+    const data = jwt.verify(token, JWT_SECRET);
+    req.user = data; // { uid, email }
+    next();
+  } catch (e) {
+    return res.status(401).json({ ok:false, error:'Token inválido' });
+  }
+};
+
+/* ===========================
+   Mi cuenta (perfil)
+   =========================== */
+// Obtener perfil
+app.get('/api/me', auth, (req, res) => {
+  const user = db.prepare('SELECT id,name,email,age,formato,is_verified FROM users WHERE id = ?').get(req.user.uid);
+  if (!user) return res.status(404).json({ ok:false, error:'Usuario no encontrado' });
+  res.json({ ok:true, ...user });
+});
+
+// Actualizar perfil (name / age / formato)
+app.post('/api/me', auth, (req, res) => {
+  const { name=null, age=null, formato=null } = req.body || {};
+  db.prepare('UPDATE users SET name = COALESCE(?, name), age = COALESCE(?, age), formato = COALESCE(?, formato) WHERE id = ?')
+    .run(name, age, formato, req.user.uid);
+  res.json({ ok:true, message:'Perfil actualizado' });
+});
+
+/* ===========================
+   Olvidé contraseña / Reset
+   =========================== */
+// Enviar código de reset (no revela si existe o no)
+app.post('/api/auth/forgot-password', async (req, res) => {
+  const { email } = req.body || {};
+  const emailNorm = String(email || '').toLowerCase().trim();
+  const user = getUserByEmail.get(emailNorm);
+  if (!user) {
+    return res.json({ ok:true, message:'Código enviado (si existe la cuenta)' });
+  }
+
+  const code = genCode();
+  insertCode.run(user.id, hash(code), nowSec() + 15 * 60);
+
+  try {
+    await transporter.sendMail({
+      from: FROM,
+      replyTo: FROM,
+      to: emailNorm,
+      subject: 'Código para restablecer tu contraseña',
+      html: `<p>Tu código es:</p><h2 style="font-family:system-ui,Segoe UI,Roboto">${code}</h2><p>Expira en 15 minutos.</p>`
+    });
+  } catch (e) {
+    console.error('SMTP forgot:', e?.message || e);
+  }
+  res.json({ ok:true, message:'Código enviado (si existe la cuenta)' });
+});
+
+// Cambiar contraseña con código
+app.post('/api/auth/reset-password', async (req, res) => {
+  const { email, code, password } = req.body || {};
+  const emailNorm = String(email || '').toLowerCase().trim();
+  const user = getUserByEmail.get(emailNorm);
+  if (!user) return res.status(404).json({ ok:false, error:'Usuario no encontrado' });
+
+  const row = getLatestCode.get(user.id);
+  if (!row) return res.status(400).json({ ok:false, error:'Código no solicitado' });
+  if (nowSec() > row.expires_at) return res.status(400).json({ ok:false, error:'Código expirado' });
+  if (hash(code) !== row.code_hash) {
+    incAttempts.run(row.id);
+    return res.status(400).json({ ok:false, error:'Código incorrecto' });
+  }
+
+  const password_hash = await bcrypt.hash(String(password), 12);
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(password_hash, user.id);
+  deleteCodesForUser.run(user.id);
+  res.json({ ok:true, message:'Contraseña actualizada' });
+});
+
+/* ===========================
+   Cambiar contraseña (logado)
+   =========================== */
+app.post('/api/auth/change-password', auth, async (req, res) => {
+  const { current, next } = req.body || {};
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.uid);
+  if (!user) return res.status(404).json({ ok:false, error:'Usuario no encontrado' });
+
+  const ok = await bcrypt.compare(String(current || ''), user.password_hash);
+  if (!ok) return res.status(401).json({ ok:false, error:'Contraseña actual incorrecta' });
+
+  const newHash = await bcrypt.hash(String(next || ''), 12);
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(newHash, user.id);
+  res.json({ ok:true, message:'Contraseña actualizada' });
 });
 
 /* ===========================
