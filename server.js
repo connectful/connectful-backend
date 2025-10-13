@@ -14,22 +14,13 @@ const app = express();
    =========================== */
 app.use(express.json());
 
-/* --- CORS: local + producción --- */
-const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ||
-  'http://localhost:3000,http://localhost:5500,http://127.0.0.1:5500,https://connectful.es,https://www.connectful.es,null'
-).split(',').map(s => s.trim());
-
+/* --- CORS: abierto para file://, localhost y producción --- */
 app.use(cors({
-  origin(origin, cb) {
-    // Permite peticiones sin origin (file://) o desde orígenes permitidos
-    if (!origin || ALLOWED_ORIGINS.includes(origin) || ALLOWED_ORIGINS.includes('null')) {
-      return cb(null, true);
-    }
-    return cb(new Error('CORS: Origin not allowed'), false);
-  },
-  methods: ['GET','POST','OPTIONS'],
-  allowedHeaders: ['Content-Type','Authorization']
+  origin: '*',  // Permite cualquier origen (file://, localhost, producción)
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
+app.options('*', cors());  // Preflight para todas las rutas
 
 // Log de cada petición (útil en Render)
 app.use((req, res, next) => {
