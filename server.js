@@ -287,6 +287,50 @@ app.post('/api/auth/change-password', auth, async (req, res) => {
 });
 
 /* ===========================
+   Soporte / Contacto
+   =========================== */
+app.post('/api/support/contact', async (req, res) => {
+  try {
+    const { name, email, subject, type, message } = req.body || {};
+
+    if (!name || !email || !message) {
+      return res.status(400).json({ ok: false, error: 'Datos incompletos.' });
+    }
+
+    console.log('📧 Nuevo mensaje de contacto:');
+    console.log({ name, email, subject, type, message });
+
+    // Opcional: enviar email de notificación al equipo
+    try {
+      await transporter.sendMail({
+        from: FROM,
+        replyTo: email, // el usuario puede responder directamente
+        to: FROM_EMAIL || 'soporte@connectful.es',
+        subject: `Contacto: ${subject || type || 'Sin asunto'}`,
+        html: `
+          <h3>Nuevo mensaje de contacto</h3>
+          <p><strong>Nombre:</strong> ${name}</p>
+          <p><strong>Email:</strong> ${email}</p>
+          <p><strong>Asunto:</strong> ${subject || 'N/A'}</p>
+          <p><strong>Tipo:</strong> ${type || 'N/A'}</p>
+          <p><strong>Mensaje:</strong></p>
+          <p>${message}</p>
+        `
+      });
+      console.log('✅ Email de contacto enviado al equipo');
+    } catch (mailErr) {
+      console.error('⚠️ Error al enviar email de contacto:', mailErr?.message || mailErr);
+      // No falla la petición si el email falla
+    }
+
+    res.json({ ok: true, message: 'Mensaje recibido correctamente' });
+  } catch (err) {
+    console.error('Error en /api/support/contact:', err?.message || err);
+    res.status(500).json({ ok: false, error: 'Error al procesar el mensaje' });
+  }
+});
+
+/* ===========================
    Arranque
    =========================== */
 app.listen(PORT, () => console.log(`✅ Server listening on port ${PORT}`));
