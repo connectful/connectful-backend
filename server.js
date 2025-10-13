@@ -293,7 +293,8 @@ app.post('/api/auth/change-password', auth, async (req, res) => {
 /* ===========================
    Soporte / Contacto
    =========================== */
-app.post('/api/support/contact', async (req, res) => {
+// Handler común para evitar bloqueos de adblockers (palabra "contact")
+const contactHandler = async (req, res) => {
   try {
     const { name, email, subject, type, message } = req.body || {};
 
@@ -332,7 +333,10 @@ app.post('/api/support/contact', async (req, res) => {
     console.error('Error en /api/support/contact:', err?.message || err);
     res.status(500).json({ ok: false, error: 'Error al procesar el mensaje' });
   }
-});
+};
+
+// Alias para evitar bloqueos de adblockers
+app.post(['/api/support/contact', '/api/support/message'], contactHandler);
 
 /* ===========================
    Arranque
