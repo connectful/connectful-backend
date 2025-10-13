@@ -16,12 +16,15 @@ app.use(express.json());
 
 /* --- CORS: local + producción --- */
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ||
-  'http://localhost:3000,https://connectful.es,https://www.connectful.es'
+  'http://localhost:3000,http://localhost:5500,http://127.0.0.1:5500,https://connectful.es,https://www.connectful.es,null'
 ).split(',').map(s => s.trim());
 
 app.use(cors({
   origin(origin, cb) {
-    if (!origin || ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+    // Permite peticiones sin origin (file://) o desde orígenes permitidos
+    if (!origin || ALLOWED_ORIGINS.includes(origin) || ALLOWED_ORIGINS.includes('null')) {
+      return cb(null, true);
+    }
     return cb(new Error('CORS: Origin not allowed'), false);
   },
   methods: ['GET','POST','OPTIONS'],
@@ -93,6 +96,7 @@ const deleteCodesForUser = db.prepare('DELETE FROM email_codes WHERE user_id = ?
    =========================== */
 app.get('/',   (req, res) => res.status(200).send('OK - connectful-backend ' + new Date().toISOString()));
 app.get('/ping', (req, res) => res.json({ ok: true, now: Date.now() }));
+app.get('/health', (req, res) => res.json({ ok: true })); // healthcheck para Render
 app.post('/echo', (req, res) => res.json({ ok: true, youSent: req.body }));
 
 /* ===========================
