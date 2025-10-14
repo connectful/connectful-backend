@@ -20,7 +20,7 @@ app.use(cors({
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
-app.options('*', cors());  // Preflight para todas las rutas
+// app.options('*', cors());  // ← Comentado: ya no compatible con Express reciente (path-to-regexp v6)
 
 // Log de cada petición (útil en Render)
 app.use((req, res, next) => {
