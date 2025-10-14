@@ -2,6 +2,21 @@
 
 Backend de la plataforma connectful - Sistema de autenticación y gestión de usuarios con 2FA.
 
+---
+
+## 📖 **¿Por dónde empiezo?**
+
+### Si es tu primera vez aquí:
+👉 **Lee primero:** [`SIGUIENTE_PASO.md`](../SIGUIENTE_PASO.md) - Guía rápida de 5 minutos
+
+### Para implementar 2FA:
+👉 **Sigue:** [`INSTRUCCIONES_2FA.md`](INSTRUCCIONES_2FA.md) - Paso a paso completo
+
+### Para desplegar en Render:
+👉 **Consulta:** [`DEPLOY_RENDER.md`](DEPLOY_RENDER.md) - Guía de producción
+
+---
+
 ## 🚀 Inicio rápido
 
 ### 1. Instalar dependencias

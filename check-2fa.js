@@ -148,7 +148,12 @@ async function verify() {
     log('   1. Verifica las variables SMTP en .env', 'yellow');
     log('   2. Ejecuta: node server.js', 'yellow');
     log('   3. Verifica que veas: [SMTP] OK: conexión verificada', 'yellow');
-    log('   4. Prueba el sistema: node test-2fa.js\n', 'yellow');
+    log('   4. Prueba SMTP: node test-smtp.js tu_email@dominio.com', 'yellow');
+    log('   5. Prueba 2FA completo: node test-2fa.js\n', 'yellow');
+    log('📖 Guías disponibles:', 'cyan');
+    log('   • SIGUIENTE_PASO.md - Empieza aquí', 'dim');
+    log('   • INSTRUCCIONES_2FA.md - Guía completa', 'dim');
+    log('   • DEPLOY_RENDER.md - Despliegue en producción\n', 'dim');
   } else {
     log('\n⚠️  Hay algunos problemas que debes corregir', 'yellow');
     log('\n📝 Acciones recomendadas:', 'cyan');

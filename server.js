@@ -97,6 +97,42 @@ app.get('/ping', (req, res) => res.json({ ok: true, now: Date.now() }));
 app.get('/health', (req, res) => res.json({ ok: true })); // healthcheck para Render
 app.post('/echo', (req, res) => res.json({ ok: true, youSent: req.body }));
 
+// Ruta de prueba SMTP (pública)
+app.post('/api/debug/send-mail', async (req, res) => {
+  try {
+    const to = (req.body?.to || '').trim();
+    if (!to) {
+      return res.status(400).json({ ok: false, error: 'Falta el campo "to" con el email destino' });
+    }
+
+    console.log('[DEBUG SMTP] Intentando enviar email a:', to);
+
+    await transporter.sendMail({
+      from: FROM,
+      to: to,
+      subject: 'Test SMTP desde connectful',
+      text: 'Hola, esto es una prueba SMTP desde el backend de connectful.',
+      html: `
+        <h2>Test SMTP</h2>
+        <p>Si recibes este correo, significa que el sistema de envío de emails está funcionando correctamente.</p>
+        <p><strong>Servidor:</strong> ${process.env.SMTP_HOST}</p>
+        <p><strong>Puerto:</strong> ${process.env.SMTP_PORT}</p>
+        <p style="color:#64748b;font-size:14px">Este es un correo de prueba generado desde /api/debug/send-mail</p>
+      `
+    });
+
+    console.log('[DEBUG SMTP] Email enviado exitosamente a:', to);
+    res.json({ ok: true, message: `Email de prueba enviado a ${to}` });
+  } catch (e) {
+    console.error('[DEBUG SMTP] Error al enviar email:', e);
+    res.status(500).json({ 
+      ok: false, 
+      error: String(e.message || e),
+      details: e.code || 'Error desconocido'
+    });
+  }
+});
+
 /* ===========================
    Funciones 2FA
    =========================== */

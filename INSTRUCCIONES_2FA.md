@@ -74,6 +74,25 @@ Verifica que veas en la consola:
 
 Si ves un error SMTP, revisa tus credenciales en el `.env`.
 
+#### 🧪 Prueba rápida de SMTP
+
+Antes de continuar, verifica que el envío de emails funciona:
+
+```bash
+# Opción 1: Script automático
+node test-smtp.js tu_email@dominio.com
+
+# Opción 2: Con curl
+curl -X POST http://localhost:4000/api/debug/send-mail \
+  -H "Content-Type: application/json" \
+  -d '{"to":"tu_email@dominio.com"}'
+```
+
+Deberías recibir un email de prueba en 1-2 minutos. Si no llega, revisa:
+- Las credenciales SMTP en `.env`
+- Los logs del servidor para errores
+- La carpeta de spam de tu email
+
 ---
 
 ### 4️⃣ Probar el sistema
