@@ -5,6 +5,8 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
+const fs = require('fs');
+const path = require('path');
 const db = require('./db');
 
 const app = express();
@@ -26,6 +28,38 @@ app.use(cors({
 app.use((req, res, next) => {
   console.log(`${req.method} ${req.url}`, 'body:', req.body);
   next();
+});
+
+/* ===========================
+   Configuración de uploads (avatares)
+   =========================== */
+const multer = require('multer');
+const sharp = require('sharp');
+
+const UPLOAD_DIR = path.join(process.cwd(), 'uploads', 'avatars');
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
+// Servir archivos estáticos (avatares accesibles públicamente)
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+
+// Configuración de Multer
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase() || '.png';
+    cb(null, `u${req.user.id}_${Date.now()}${ext}`);
+  }
+});
+
+const fileFilter = (_req, file, cb) => {
+  const ok = /image\/(png|jpe?g|webp|gif)/i.test(file.mimetype);
+  cb(ok ? null : new Error('Formato no permitido'), ok);
+};
+
+const upload = multer({ 
+  storage, 
+  fileFilter, 
+  limits: { fileSize: 3 * 1024 * 1024 } // 3MB máximo
 });
 
 /* ====== ENV ====== */
@@ -313,7 +347,7 @@ const auth = (req, res, next) => {
    =========================== */
 // Obtener perfil
 app.get('/api/me', auth, (req, res) => {
-  const user = db.prepare('SELECT id,name,email,age,formato,is_verified,twofa_enabled FROM users WHERE id = ?').get(req.user.uid);
+  const user = db.prepare('SELECT id,name,email,age,formato,is_verified,twofa_enabled,avatar_url FROM users WHERE id = ?').get(req.user.uid);
   if (!user) return res.status(404).json({ ok:false, error:'Usuario no encontrado' });
   res.json({ ok:true, ...user });
 });
@@ -324,6 +358,68 @@ app.post('/api/me', auth, (req, res) => {
   db.prepare('UPDATE users SET name = COALESCE(?, name), age = COALESCE(?, age), formato = COALESCE(?, formato) WHERE id = ?')
     .run(name, age, formato, req.user.uid);
   res.json({ ok:true, message:'Perfil actualizado' });
+});
+
+/* ===========================
+   Avatar (subir/eliminar)
+   =========================== */
+// Subir avatar
+app.post('/api/me/avatar', auth, upload.single('avatar'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ ok: false, error: 'Falta archivo' });
+
+    const srcPath = req.file.path;
+    const webpName = path.basename(srcPath, path.extname(srcPath)) + '.webp';
+    const outPath = path.join(UPLOAD_DIR, webpName);
+
+    // Redimensionar y convertir a WEBP (cuadrado máximo 512px)
+    await sharp(srcPath)
+      .rotate() // auto-rotación según EXIF
+      .resize(512, 512, { fit: 'cover' })
+      .webp({ quality: 85 })
+      .toFile(outPath);
+
+    // Borrar el archivo original subido
+    fs.unlink(srcPath, () => {});
+
+    // Borrar avatar previo si existe
+    const row = db.prepare('SELECT avatar_url FROM users WHERE id=?').get(req.user.uid);
+    if (row?.avatar_url) {
+      const prevPath = path.join(process.cwd(), row.avatar_url.replace(/\//g, path.sep));
+      if (fs.existsSync(prevPath)) {
+        fs.unlink(prevPath, () => {});
+      }
+    }
+
+    // Guardar URL relativa en la BD
+    const publicUrl = `/uploads/avatars/${webpName}`;
+    db.prepare('UPDATE users SET avatar_url=? WHERE id=?').run(publicUrl, req.user.uid);
+
+    console.log('[Avatar] Subido exitosamente:', publicUrl);
+    return res.json({ ok: true, avatar_url: publicUrl });
+  } catch (e) {
+    console.error('[Avatar] Error al subir:', e);
+    return res.status(500).json({ ok: false, error: 'No se pudo subir el avatar' });
+  }
+});
+
+// Eliminar avatar
+app.delete('/api/me/avatar', auth, (req, res) => {
+  try {
+    const row = db.prepare('SELECT avatar_url FROM users WHERE id=?').get(req.user.uid);
+    if (row?.avatar_url) {
+      const absPath = path.join(process.cwd(), row.avatar_url.replace(/\//g, path.sep));
+      if (fs.existsSync(absPath)) {
+        fs.unlink(absPath, () => {});
+      }
+    }
+    db.prepare('UPDATE users SET avatar_url=NULL WHERE id=?').run(req.user.uid);
+    console.log('[Avatar] Eliminado para usuario:', req.user.uid);
+    res.json({ ok: true, message: 'Avatar eliminado' });
+  } catch (e) {
+    console.error('[Avatar] Error al eliminar:', e);
+    res.status(500).json({ ok: false, error: 'No se pudo eliminar el avatar' });
+  }
 });
 
 /* ===========================

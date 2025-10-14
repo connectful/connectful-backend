@@ -26,6 +26,17 @@ function ensureSchema() {
     console.log('[DB] ✓ Columna twofa_enabled ya existe');
   }
 
+  // 2b) Asegurar que users tiene avatar_url
+  const hasAvatar = userCols.some(c => c.name === 'avatar_url');
+  
+  if (!hasAvatar) {
+    console.log('[DB] Agregando columna avatar_url a users...');
+    db.exec(`ALTER TABLE users ADD COLUMN avatar_url TEXT;`);
+    console.log('[DB] ✓ Columna avatar_url agregada');
+  } else {
+    console.log('[DB] ✓ Columna avatar_url ya existe');
+  }
+
   // 3) Asegurar que existe la tabla user_verifications
   const tables = db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='user_verifications'`).all();
   
