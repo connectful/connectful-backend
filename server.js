@@ -318,7 +318,7 @@ app.post('/api/auth/login', async (req, res) => {
     }
 
     // Login normal sin 2FA
-    const token = jwt.sign({ uid: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign({ uid: user.id, email: user.email }, JWT_SECRET, { expiresIn: '365d' });
     res.json({ ok: true, token, user: { id: user.id, name: user.name, email: user.email } });
   } catch (err) {
     console.error('[LOGIN] Error:', err?.message || err);
@@ -531,7 +531,7 @@ app.post('/api/auth/2fa/verify', async (req, res) => {
     }
 
     // Emitir token final
-    const token = jwt.sign({ uid: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign({ uid: user.id, email: user.email }, JWT_SECRET, { expiresIn: '365d' });
     
     res.json({ 
       ok: true, 
