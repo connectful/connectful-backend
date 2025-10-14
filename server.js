@@ -75,12 +75,19 @@ const genCode = () => String(Math.floor(100000 + Math.random() * 900000));
    SQL preparada
    =========================== */
 const getUserByEmail   = db.prepare('SELECT * FROM users WHERE email = ?');
+const getUserById      = db.prepare('SELECT * FROM users WHERE id = ?');
 const insertUser       = db.prepare('INSERT INTO users (name, email, password_hash, age, formato) VALUES (?,?,?,?,?)');
 const markVerified     = db.prepare('UPDATE users SET is_verified = 1 WHERE id = ?');
 const insertCode       = db.prepare('INSERT INTO email_codes (user_id, code_hash, expires_at) VALUES (?,?,?)');
 const getLatestCode    = db.prepare('SELECT * FROM email_codes WHERE user_id = ? ORDER BY id DESC LIMIT 1');
 const incAttempts      = db.prepare('UPDATE email_codes SET attempts = attempts + 1 WHERE id = ?');
 const deleteCodesForUser = db.prepare('DELETE FROM email_codes WHERE user_id = ?');
+
+// 2FA SQL preparada
+const updateTwofa = db.prepare('UPDATE users SET twofa_enabled = ? WHERE id = ?');
+const insertVerification = db.prepare('INSERT INTO user_verifications (user_id, purpose, code, expires_at, attempts, resend_count, last_sent) VALUES (?,?,?,?,?,?,?)');
+const getVerification = db.prepare('SELECT * FROM user_verifications WHERE id = ? AND user_id = ? AND purpose = ?');
+const deleteVerification = db.prepare('DELETE FROM user_verifications WHERE id = ?');
 
 /* ===========================
    Endpoints debug
@@ -89,6 +96,62 @@ app.get('/',   (req, res) => res.status(200).send('OK - connectful-backend ' + n
 app.get('/ping', (req, res) => res.json({ ok: true, now: Date.now() }));
 app.get('/health', (req, res) => res.json({ ok: true })); // healthcheck para Render
 app.post('/echo', (req, res) => res.json({ ok: true, youSent: req.body }));
+
+/* ===========================
+   Funciones 2FA
+   =========================== */
+const TWOFA_EXP_MIN = 10;
+
+async function generateTwofaForUser(user) {
+  const code = genCode();
+  const expiresAt = nowSec() + TWOFA_EXP_MIN * 60;
+  
+  const info = insertVerification.run(user.id, 'login_2fa', code, expiresAt, 0, 0, nowSec());
+  const verificationId = info.lastInsertRowid;
+  
+  const tempToken = jwt.sign(
+    { uid: user.id, vid: verificationId, p: 'login_2fa' },
+    JWT_SECRET,
+    { expiresIn: `${TWOFA_EXP_MIN}m` }
+  );
+
+  try {
+    await transporter.sendMail({
+      from: FROM,
+      to: user.email,
+      subject: 'Tu código de acceso (2FA)',
+      html: `
+        <h2>Tu código de acceso</h2>
+        <div style="font-size:28px;font-weight:800;letter-spacing:4px;font-family:system-ui,Segoe UI,Roboto">${code}</div>
+        <p>Este código caduca en ${TWOFA_EXP_MIN} minutos.</p>
+        <p style="color:#64748b;font-size:14px">Si no solicitaste este código, ignora este correo.</p>
+      `
+    });
+    console.log('[2FA] Código enviado a', user.email);
+  } catch (err) {
+    console.error('[2FA] Error al enviar email:', err?.message || err);
+    throw new Error('No se pudo enviar el email de verificación');
+  }
+
+  return { tempToken };
+}
+
+function verifyTwofa(tempToken, code) {
+  try {
+    const payload = jwt.verify(tempToken, JWT_SECRET);
+    const { uid, vid } = payload;
+    
+    const ver = getVerification.get(vid, uid, 'login_2fa');
+    if (!ver) return { ok: false, error: 'Código no encontrado' };
+    if (nowSec() > ver.expires_at) return { ok: false, error: 'Código expirado' };
+    if (String(ver.code) !== String(code)) return { ok: false, error: 'Código incorrecto' };
+
+    deleteVerification.run(vid);
+    return { ok: true, uid };
+  } catch (err) {
+    return { ok: false, error: 'Token expirado o inválido' };
+  }
+}
 
 /* ===========================
    Auth: registro / verificación / login
@@ -168,17 +231,29 @@ app.post('/api/auth/verify-email', (req, res) => {
 });
 
 app.post('/api/auth/login', async (req, res) => {
-  const { email, password } = req.body || {};
-  const emailNorm = String(email || '').toLowerCase().trim();
-  const user = getUserByEmail.get(emailNorm);
-  if (!user) return res.status(401).json({ ok: false, error: 'Credenciales inválidas' });
+  try {
+    const { email, password } = req.body || {};
+    const emailNorm = String(email || '').toLowerCase().trim();
+    const user = getUserByEmail.get(emailNorm);
+    if (!user) return res.status(401).json({ ok: false, error: 'Credenciales inválidas' });
 
-  const ok = await bcrypt.compare(password, user.password_hash);
-  if (!ok) return res.status(401).json({ ok: false, error: 'Credenciales inválidas' });
-  if (!user.is_verified) return res.status(403).json({ ok: false, error: 'Verifica tu email primero' });
+    const ok = await bcrypt.compare(password, user.password_hash);
+    if (!ok) return res.status(401).json({ ok: false, error: 'Credenciales inválidas' });
+    if (!user.is_verified) return res.status(403).json({ ok: false, error: 'Verifica tu email primero' });
 
-  const token = jwt.sign({ uid: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
-  res.json({ ok: true, token });
+    // Si el usuario tiene 2FA habilitado, generar y enviar código
+    if (user.twofa_enabled) {
+      const { tempToken } = await generateTwofaForUser(user);
+      return res.json({ ok: true, twofa_required: true, temp_token: tempToken });
+    }
+
+    // Login normal sin 2FA
+    const token = jwt.sign({ uid: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
+    res.json({ ok: true, token, user: { id: user.id, name: user.name, email: user.email } });
+  } catch (err) {
+    console.error('[LOGIN] Error:', err?.message || err);
+    res.status(500).json({ ok: false, error: err?.message || 'Error al iniciar sesión' });
+  }
 });
 
 /* ===========================
@@ -202,7 +277,7 @@ const auth = (req, res, next) => {
    =========================== */
 // Obtener perfil
 app.get('/api/me', auth, (req, res) => {
-  const user = db.prepare('SELECT id,name,email,age,formato,is_verified FROM users WHERE id = ?').get(req.user.uid);
+  const user = db.prepare('SELECT id,name,email,age,formato,is_verified,twofa_enabled FROM users WHERE id = ?').get(req.user.uid);
   if (!user) return res.status(404).json({ ok:false, error:'Usuario no encontrado' });
   res.json({ ok:true, ...user });
 });
@@ -279,6 +354,72 @@ app.post('/api/auth/change-password', auth, async (req, res) => {
   const newHash = await bcrypt.hash(String(next || ''), 12);
   db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(newHash, user.id);
   res.json({ ok:true, message:'Contraseña actualizada' });
+});
+
+/* ===========================
+   Rutas 2FA
+   =========================== */
+// Activar/desactivar 2FA (requiere autenticación)
+app.post('/api/auth/2fa', auth, async (req, res) => {
+  try {
+    const userId = req.user.uid;
+    const { enabled } = req.body || {};
+    
+    updateTwofa.run(enabled ? 1 : 0, userId);
+    
+    res.json({ 
+      ok: true, 
+      message: enabled ? '2FA activado correctamente' : '2FA desactivado correctamente' 
+    });
+  } catch (err) {
+    console.error('[2FA] Error al cambiar estado:', err?.message || err);
+    res.status(500).json({ ok: false, error: 'No se pudo cambiar el estado de 2FA' });
+  }
+});
+
+// Verificar código 2FA y emitir token final (pública)
+app.post('/api/auth/2fa/verify', async (req, res) => {
+  try {
+    const { temp_token, code } = req.body || {};
+    
+    if (!temp_token || !code) {
+      return res.status(400).json({ ok: false, error: 'Faltan parámetros' });
+    }
+
+    const verification = verifyTwofa(temp_token, code);
+    
+    if (!verification.ok) {
+      return res.status(400).json(verification);
+    }
+
+    // Obtener datos del usuario para el token final
+    const user = getUserById.get(verification.uid);
+    if (!user) {
+      return res.status(404).json({ ok: false, error: 'Usuario no encontrado' });
+    }
+
+    // Emitir token final
+    const token = jwt.sign({ uid: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
+    
+    res.json({ 
+      ok: true, 
+      token, 
+      user: { id: user.id, name: user.name, email: user.email } 
+    });
+  } catch (err) {
+    console.error('[2FA] Error en verify:', err?.message || err);
+    res.status(500).json({ ok: false, error: 'Error al verificar código' });
+  }
+});
+
+// Reenviar código 2FA (opcional, para futuras mejoras)
+app.post('/api/auth/2fa/send', async (req, res) => {
+  try {
+    // Por ahora solo responde OK - se puede implementar lógica de reenvío
+    res.json({ ok: true, message: 'Funcionalidad de reenvío disponible' });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: 'Error al reenviar código' });
+  }
 });
 
 /* ===========================

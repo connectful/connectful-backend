@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS users (
   age INTEGER,
   formato TEXT,
   is_verified INTEGER DEFAULT 0,
+  twofa_enabled INTEGER DEFAULT 0,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -15,6 +16,19 @@ CREATE TABLE IF NOT EXISTS email_codes (
   code_hash TEXT NOT NULL,
   expires_at INTEGER NOT NULL,
   attempts INTEGER DEFAULT 0,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS user_verifications (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  purpose TEXT NOT NULL,
+  code TEXT NOT NULL,
+  expires_at INTEGER NOT NULL,
+  attempts INTEGER DEFAULT 0,
+  resend_count INTEGER DEFAULT 0,
+  last_sent INTEGER,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
 );
