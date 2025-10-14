@@ -9,32 +9,41 @@
 
 ---
 
-## 1️⃣ Hacer commit y push de los cambios
+## 1️⃣ Limpiar y hacer commit de los cambios
+
+### A. Limpiar base de datos del repositorio (MUY IMPORTANTE)
+
+El archivo `connectful.db` ya no debe versionarse. Usa el script automático:
 
 ```powershell
 cd C:\Users\Yeray\Desktop\Registro
 
-# Ver qué archivos cambiaron
-git status
-
-# Agregar todos los cambios
-git add .
-
-# Commit con mensaje descriptivo
-git commit -m "feat: implementar sistema 2FA completo con verificación por email"
-
-# Push a tu repositorio
-git push origin main
+# Ejecutar script de limpieza
+powershell -ExecutionPolicy Bypass .\cleanup-git.ps1
 ```
 
-> **Nota**: Si no has inicializado git, hazlo primero:
-> ```powershell
-> git init
-> git add .
-> git commit -m "feat: implementar sistema 2FA completo"
-> git remote add origin TU_REPOSITORIO_URL
-> git push -u origin main
-> ```
+Este script:
+- ✅ Quita `connectful.db` del índice de Git
+- ✅ Verifica que esté en `.gitignore`
+- ✅ Hace commit de los cambios
+- ✅ Hace push (opcional)
+
+**¿Por qué es necesario?**
+- La BD se creará automáticamente en Render con el schema correcto
+- Evita errores tipo: `no such column: twofa_enabled`
+- Cada entorno tendrá su propia BD
+
+### B. Verificar que el push se hizo
+
+```powershell
+git log --oneline -1
+# Deberías ver: chore: dejar de versionar DB SQLite + migración automática
+
+git status
+# Should be clean: nothing to commit, working tree clean
+```
+
+> **Nota**: Si prefieres hacerlo manualmente, consulta `FIX_TWOFA_ENABLED.md`
 
 ---
 
@@ -65,16 +74,33 @@ git push origin main
 
 1. **En Render, ve a la pestaña "Logs"**
 
-2. **Busca estos mensajes:**
+2. **Busca estos mensajes (en orden):**
    ```
+   [DB] Verificando y migrando schema...
+   [DB] ✓ Columna twofa_enabled ya existe
+   [DB] ✓ Tabla user_verifications ya existe
+   [DB] ✓ Schema verificado y actualizado
    [SMTP] OK: conexión verificada
    ✅ Server listening on port XXXX
    ```
 
-3. **Si ves errores SMTP:**
-   - `[SMTP] ERROR verify: ...` → Revisa las credenciales
-   - `ECONNREFUSED` → Host o puerto incorrectos
-   - `EAUTH` → Usuario o contraseña incorrectos
+   **Si es la primera vez después del push:**
+   ```
+   [DB] Verificando y migrando schema...
+   [DB] Agregando columna twofa_enabled a users...
+   [DB] ✓ Columna twofa_enabled agregada
+   [DB] Creando tabla user_verifications...
+   [DB] ✓ Tabla user_verifications creada
+   [DB] ✓ Schema verificado y actualizado
+   ```
+
+3. **Si ves errores:**
+   - ❌ `no such column: twofa_enabled` → Asegúrate de haber ejecutado `cleanup-git.ps1` y hecho push
+   - ❌ `[SMTP] ERROR verify: ...` → Revisa las credenciales en Variables de entorno
+   - ❌ `ECONNREFUSED` → Host o puerto SMTP incorrectos
+   - ❌ `EAUTH` → Usuario o contraseña SMTP incorrectos
+
+> 📖 Si ves `no such column: twofa_enabled`, consulta `FIX_TWOFA_ENABLED.md`
 
 ---
 

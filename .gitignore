@@ -1,3 +1,6 @@
 ﻿node_modules/
 .env
 connectful.db
+connectful.db.backup.*
+*.db-shm
+*.db-wal
