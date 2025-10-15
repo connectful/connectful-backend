@@ -8,6 +8,8 @@ import nodemailer from 'nodemailer';
 import fs from 'fs';
 import path from 'path';
 import mongoose from 'mongoose';
+import multer from 'multer';
+import sharp from 'sharp';
 import { connectDB } from './db.js';
 import authRouter from './routes/auth.js';
 
@@ -40,9 +42,6 @@ app.use((req, res, next) => {
 /* ===========================
    Configuración de uploads (avatares)
    =========================== */
-const multer = require('multer');
-const sharp = require('sharp');
-
 const UPLOAD_DIR = path.join(process.cwd(), 'uploads', 'avatars');
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
