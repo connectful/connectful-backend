@@ -13,6 +13,12 @@ const app = express();
 await connectDB();
 
 /* ===========================
+   🔐 Verificación de configuración
+   =========================== */
+const fp = (process.env.JWT_SECRET || "").slice(-6);
+console.log(`[auth] JWT_SECRET set (…${fp})`);
+
+/* ===========================
    Middlewares base
    =========================== */
 app.use(express.json());
