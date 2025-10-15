@@ -7,9 +7,21 @@ const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 const fs = require('fs');
 const path = require('path');
+const mongoose = require('mongoose');
 const db = require('./db');
 
 const app = express();
+
+/* ===========================
+   🗄️ Conexión a MongoDB Atlas (opcional)
+   =========================== */
+if (process.env.MONGODB_URI) {
+  mongoose.connect(process.env.MONGODB_URI)
+    .then(() => console.log('✅ MongoDB Atlas connected'))
+    .catch(err => console.warn('⚠️ MongoDB Atlas connection failed:', err.message));
+} else {
+  console.log('📂 Using SQLite database (no MONGODB_URI found)');
+}
 
 /* ===========================
    Middlewares base
@@ -601,6 +613,41 @@ const contactHandler = async (req, res) => {
 
 // Alias para evitar bloqueos de adblockers
 app.post(['/api/support/contact', '/api/support/message'], contactHandler);
+
+/* ===========================
+   🩺 Endpoint de prueba MongoDB Atlas
+   =========================== */
+app.get("/debug/db-ping", async (req, res) => {
+  try {
+    // Si no hay conexión a MongoDB, devolver info de SQLite
+    if (!mongoose.connection.readyState || mongoose.connection.readyState !== 1) {
+      return res.json({ 
+        ok: true, 
+        database: 'SQLite', 
+        path: process.env.SQLITE_PATH || './connectful.db',
+        mongodb_state: mongoose.connection.readyState,
+        message: 'Using SQLite database'
+      });
+    }
+    
+    // Si hay conexión a MongoDB, hacer ping
+    await mongoose.connection.db.admin().ping();
+    res.json({ 
+      ok: true, 
+      database: 'MongoDB Atlas',
+      state: mongoose.connection.readyState,
+      host: mongoose.connection.host,
+      name: mongoose.connection.name
+    });
+  } catch (err) {
+    res.status(500).json({ 
+      ok: false, 
+      database: 'MongoDB Atlas',
+      error: String(err),
+      fallback: 'Check MongoDB connection string'
+    });
+  }
+});
 
 /* ===========================
    Arranque
