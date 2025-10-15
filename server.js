@@ -1,27 +1,22 @@
-require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const crypto = require('crypto');
-const nodemailer = require('nodemailer');
-const fs = require('fs');
-const path = require('path');
-const mongoose = require('mongoose');
-const db = require('./db');
+import 'dotenv/config';
+import express from 'express';
+import cors from 'cors';
+import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
+import nodemailer from 'nodemailer';
+import fs from 'fs';
+import path from 'path';
+import mongoose from 'mongoose';
+import { connectDB } from './db.js';
+import authRouter from './routes/auth.js';
 
 const app = express();
 
 /* ===========================
-   🗄️ Conexión a MongoDB Atlas (opcional)
+   🗄️ Conexión a MongoDB Atlas
    =========================== */
-if (process.env.MONGODB_URI) {
-  mongoose.connect(process.env.MONGODB_URI)
-    .then(() => console.log('✅ MongoDB Atlas connected'))
-    .catch(err => console.warn('⚠️ MongoDB Atlas connection failed:', err.message));
-} else {
-  console.log('📂 Using SQLite database (no MONGODB_URI found)');
-}
+await connectDB();
 
 /* ===========================
    Middlewares base
@@ -617,37 +612,30 @@ app.post(['/api/support/contact', '/api/support/message'], contactHandler);
 /* ===========================
    🩺 Endpoint de prueba MongoDB Atlas
    =========================== */
-app.get("/debug/db-ping", async (req, res) => {
-  try {
-    // Si no hay conexión a MongoDB, devolver info de SQLite
-    if (!mongoose.connection.readyState || mongoose.connection.readyState !== 1) {
-      return res.json({ 
-        ok: true, 
-        database: 'SQLite', 
-        path: process.env.SQLITE_PATH || './connectful.db',
-        mongodb_state: mongoose.connection.readyState,
-        message: 'Using SQLite database'
-      });
-    }
-    
-    // Si hay conexión a MongoDB, hacer ping
-    await mongoose.connection.db.admin().ping();
+app.get("/debug/db-ping", async (_req, res) => {
+  try { 
+    await mongoose.connection.db.admin().ping(); 
     res.json({ 
       ok: true, 
       database: 'MongoDB Atlas',
       state: mongoose.connection.readyState,
       host: mongoose.connection.host,
       name: mongoose.connection.name
-    });
-  } catch (err) {
+    }); 
+  }
+  catch(e){ 
     res.status(500).json({ 
       ok: false, 
       database: 'MongoDB Atlas',
-      error: String(err),
-      fallback: 'Check MongoDB connection string'
-    });
+      error: String(e) 
+    }); 
   }
 });
+
+/* ===========================
+   🔐 Rutas de autenticación
+   =========================== */
+app.use("/api/auth", authRouter);
 
 /* ===========================
    Arranque
