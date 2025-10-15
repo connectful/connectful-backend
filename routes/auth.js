@@ -44,6 +44,13 @@ r.post("/password", auth, async (req,res)=>{
   res.json({ ok:true });
 });
 
+/* Obtener perfil del usuario logueado */
+r.get("/me", auth, async (req, res) => {
+  const user = await User.findById(req.user.id).select("-passwordHash");
+  if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
+  res.json({ ok: true, user });
+});
+
 /* Eliminar cuenta */
 r.delete("/me", auth, async (req,res)=>{
   await User.findByIdAndDelete(req.user.id);
