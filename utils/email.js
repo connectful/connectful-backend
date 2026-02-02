@@ -3,32 +3,31 @@ import nodemailer from 'nodemailer';
 export const sendEmail = async (to, subject, text) => {
   try {
     const transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: 465,
-      secure: true, // Importante para puerto 465
+      host: "smtp-relay.brevo.com",
+      port: 2525, // Usamos el puerto 2525 que suele estar abierto en Render
+      secure: false, // Debe ser false para el puerto 2525 o 587
       auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
+        user: process.env.SMTP_USER, // Tu correo de Brevo
+        pass: process.env.SMTP_PASS, // Tu API KEY de Brevo
       },
       tls: {
-        // Esto evita bloqueos de seguridad comunes en correos de empresa
-        rejectUnauthorized: false 
+        rejectUnauthorized: false // Esto evita que la conexión se corte por seguridad
       }
     });
 
-    console.log(`📩 Enviando correo desde soporte a: ${to}...`);
+    console.log(`📤 Intentando enviar correo a: ${to}...`);
 
     await transporter.sendMail({
-      from: `"Soporte Connectful" <${process.env.SMTP_USER}>`,
-      to: to,
-      subject: subject,
-      text: text,
+      from: `"Connectful" <${process.env.FROM_EMAIL || process.env.SMTP_USER}>`,
+      to,
+      subject,
+      text,
     });
     
-    console.log("✅ ¡Correo entregado con éxito!");
+    console.log("✅ ¡Correo enviado con éxito!");
     return true;
   } catch (error) {
-    console.error("❌ Error en el envío corporativo:", error.message);
+    console.error("❌ Error real en el envío:", error.message);
     return false;
   }
 };
