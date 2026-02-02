@@ -7,6 +7,7 @@ const UserSchema = new mongoose.Schema({
   age: Number,
   formato: String,
   avatarUrl: String,
+  intereses: [String], // Lista de intereses del usuario
   role: { type: String, default: "user" },
   notifEmail: { type: Boolean, default: false },
   notifSMS:   { type: Boolean, default: false },
