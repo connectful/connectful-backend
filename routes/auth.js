@@ -34,19 +34,29 @@ r.post("/register", async (req,res)=>{
   res.json({ ok:true, user:{ id:user._id, email:user.email }});
 });
 
-/* === NUEVA RUTA: VERIFICAR EMAIL === */
-r.post("/verify-email", async (req,res)=>{
-  const { email, code } = req.body;
-  const user = await User.findOne({ email });
-  
-  if(!user) return res.status(404).json({ error:"Usuario no encontrado" });
-  if(user.twofaCode !== code) return res.status(400).json({ error:"Código incorrecto" });
+/* === VERIFICAR EMAIL (De Pendiente a Verificado) === */
+r.post("/verify-email", async (req, res) => {
+  try {
+    const { email, code } = req.body;
+    const user = await User.findOne({ email });
 
-  user.twofaCode = undefined; // Limpiamos el código
-  user.is_verified = true;    // Marcamos como verificado
-  await user.save();
+    if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
+    
+    // Comparamos el código que envió el usuario con el de la DB
+    if (user.twofaCode !== code) {
+      return res.status(400).json({ error: "Código incorrecto o expirado" });
+    }
 
-  res.json({ ok:true });
+    // Si es correcto:
+    user.is_verified = true;    // Cambiamos el estado
+    user.twofaCode = undefined; // Borramos el código para que no se reuse
+    await user.save();
+
+    console.log(`✅ Usuario ${email} verificado con éxito`);
+    res.json({ ok: true, message: "Cuenta verificada correctamente" });
+  } catch (e) {
+    res.status(500).json({ error: "Error en el servidor" });
+  }
 });
 
 /* Login */
