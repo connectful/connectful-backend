@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import mongoose from 'mongoose';
+import path from 'path';
 import { connectDB } from './db.js';
 import authRouter from './routes/auth.js';
 
@@ -22,6 +23,9 @@ console.log(`[auth] JWT_SECRET set (…${fp})`);
    Middlewares base
    =========================== */
 app.use(express.json());
+
+/* --- Servir archivos estáticos (avatares) --- */
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 /* --- CORS: abierto para file://, localhost y producción --- */
 app.use(cors({
