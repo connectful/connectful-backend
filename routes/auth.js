@@ -61,7 +61,7 @@ r.post("/verify-email", async (req, res) => {
 
 /* Login */
 r.post("/login", async (req,res)=>{
-  const { email, password } = req.body ?? {};
+  const { email, password, remember } = req.body ?? {};
   const user = await User.findOne({ email });
   if(!user) return res.status(401).json({ error:"Credenciales inválidas" });
   
@@ -85,7 +85,11 @@ r.post("/login", async (req,res)=>{
     return res.json({ ok:true, twofa_required:true, temp_token });
   }
 
-  const token = jwt.sign({ id:user._id.toString(), role:user.role }, process.env.JWT_SECRET, { expiresIn:"365d" });
+  // Decidir duración del token según "Recordar sesión"
+  const expiresIn = remember ? "30d" : "24h";
+  const token = jwt.sign({ id:user._id.toString(), role:user.role }, process.env.JWT_SECRET, { expiresIn });
+  
+  console.log(`🔑 Login exitoso: ${user.email} (Recordar: ${remember ? 'Sí' : 'No'} - Expira en: ${expiresIn})`);
   res.json({ ok:true, token, user });
 });
 
