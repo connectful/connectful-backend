@@ -224,6 +224,26 @@ r.delete("/me/avatar", auth, async (req, res) => {
   }
 });
 
+/* === RUTA PARA GUARDAR NOTIFICACIONES === */
+r.post("/me/notifications", auth, async (req, res) => {
+  try {
+    const { notifications } = req.body;
+    const user = await User.findById(req.user.id);
+    
+    if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
+
+    // Guardamos el objeto de notificaciones
+    user.notifications = notifications;
+    await user.save();
+
+    console.log(`🔔 Notificaciones actualizadas: ${user.email}`);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("Error guardando notificaciones:", e);
+    res.status(500).json({ error: "Error en el servidor" });
+  }
+});
+
 /* === RUTA DE EMERGENCIA PARA BORRAR TU USUARIO BLOQUEADO === */
 r.get("/limpiar/:email", async (req, res) => {
   try {
