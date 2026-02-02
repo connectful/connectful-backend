@@ -4,28 +4,31 @@ export const sendEmail = async (to, subject, text) => {
   try {
     const transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST,
-      port: 465, 
-      secure: true, 
+      port: 465,
+      secure: true, // Importante para puerto 465
       auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
       },
-      // AÑADIMOS ESTO PARA EVITAR EL TIMEOUT
-      connectionTimeout: 20000, // 20 segundos de espera
-      greetingTimeout: 20000,
+      tls: {
+        // Esto evita bloqueos de seguridad comunes en correos de empresa
+        rejectUnauthorized: false 
+      }
     });
 
+    console.log(`📩 Enviando correo desde soporte a: ${to}...`);
+
     await transporter.sendMail({
-      from: `"Connectful" <${process.env.FROM_EMAIL || process.env.SMTP_USER}>`,
-      to,
-      subject,
-      text,
+      from: `"Soporte Connectful" <${process.env.SMTP_USER}>`,
+      to: to,
+      subject: subject,
+      text: text,
     });
     
-    console.log("✅ Email enviado correctamente");
+    console.log("✅ ¡Correo entregado con éxito!");
     return true;
   } catch (error) {
-    console.error("❌ Error enviando email:", error.message);
+    console.error("❌ Error en el envío corporativo:", error.message);
     return false;
   }
 };
