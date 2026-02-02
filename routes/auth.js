@@ -69,7 +69,7 @@ r.post("/login", async (req,res)=>{
   if(!ok) return res.status(401).json({ error:"Credenciales inválidas" });
 
   /* 2FA Check */
-  if(user.twofa){
+  if(user.twofa_enabled){
     const code = crypto.randomInt(100000, 999999).toString();
     user.twofaCode = code;
     user.twofaExpires = new Date(Date.now() + 10 * 60 * 1000); 
@@ -163,6 +163,24 @@ r.get("/limpiar/:email", async (req, res) => {
     res.send(`<h1>✅ Usuario ${email} eliminado correctamente.</h1><p>Ahora vuelve a la web y regístrate de cero.</p>`);
   } catch (e) {
     res.send("<h1>❌ Error al borrar</h1>" + e.message);
+  }
+});
+
+/* === ACTIVAR/DESACTIVAR 2FA === */
+r.post("/2fa", auth, async (req, res) => {
+  try {
+    const { enabled } = req.body;
+    const user = await User.findById(req.user.id);
+    
+    if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
+
+    user.twofa_enabled = enabled;
+    await user.save();
+
+    console.log(`🔒 2FA ${enabled ? 'ACTIVADO' : 'DESACTIVADO'} para ${user.email}`);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: "Error al guardar configuración" });
   }
 });
 
