@@ -273,4 +273,22 @@ r.post("/2fa", auth, async (req, res) => {
   }
 });
 
+/* === RUTA PARA GUARDAR INTERESES === */
+r.post("/me/interests", auth, async (req, res) => {
+  try {
+    const { intereses } = req.body; // Recibimos el array de intereses
+    const user = await User.findById(req.user.id);
+    
+    if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
+
+    user.intereses = intereses; // Guardamos la lista
+    await user.save();
+
+    console.log(`🏷️ Intereses actualizados para ${user.email}`);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: "Error al guardar intereses" });
+  }
+});
+
 export default r;
