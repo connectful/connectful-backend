@@ -2,11 +2,18 @@ import { Router } from "express";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import crypto from "crypto"; 
+import multer from 'multer';
+import sharp from 'sharp';
+import fs from 'fs';
+import path from 'path';
 import { User } from "../models/User.js";
 import { auth } from "../utils/auth.js";
 import { sendEmail } from "../utils/email.js"; 
 
 const r = Router();
+
+// Configuración de Multer (Guardado temporal)
+const upload = multer({ dest: 'uploads/temp/' });
 
 /* === REGISTRO (AHORA GENERA CÓDIGO) === */
 r.post("/register", async (req,res)=>{
@@ -157,6 +164,64 @@ r.post("/2fa/send", async (req,res)=>{
     sendEmail(user.email, "Código 2FA", `Código: ${code}`).catch(e=>{});
     res.json({ ok:true });
   } catch (e) { res.status(401).json({ error:"Error" }); }
+});
+
+/* === RUTA PARA SUBIR AVATAR === */
+r.post("/me/avatar", auth, upload.single('avatar'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "No se subió ninguna imagen" });
+
+    const userId = req.user.id;
+    const fileName = `avatar-${userId}-${Date.now()}.webp`;
+    const outputPath = path.join(process.cwd(), 'uploads/avatars', fileName);
+
+    // Crear carpetas si no existen
+    if (!fs.existsSync('uploads/avatars')) fs.mkdirSync('uploads/avatars', { recursive: true });
+
+    // Procesar con Sharp (Redimensionar y convertir a WebP para que pese poco)
+    await sharp(req.file.path)
+      .resize(400, 400, { fit: 'cover' })
+      .webp({ quality: 80 })
+      .toFile(outputPath);
+
+    // Borrar archivo temporal
+    fs.unlinkSync(req.file.path);
+
+    // Guardar URL en MongoDB
+    const user = await User.findById(userId);
+    user.avatarUrl = `/uploads/avatars/${fileName}`;
+    await user.save();
+
+    console.log(`🖼️ Avatar subido: ${user.email} -> ${fileName}`);
+    res.json({ ok: true, avatar_url: user.avatarUrl });
+  } catch (e) {
+    console.error("Error subiendo avatar:", e);
+    res.status(500).json({ error: "Error al procesar la imagen" });
+  }
+});
+
+/* === RUTA PARA ELIMINAR AVATAR === */
+r.delete("/me/avatar", auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    
+    // Intentar borrar archivo físico si existe
+    if (user.avatarUrl) {
+      const filePath = path.join(process.cwd(), user.avatarUrl);
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+    }
+    
+    user.avatarUrl = undefined;
+    await user.save();
+    
+    console.log(`❌ Avatar eliminado: ${user.email}`);
+    res.json({ ok: true, message: "Avatar eliminado" });
+  } catch (e) {
+    console.error("Error eliminando avatar:", e);
+    res.status(500).json({ error: "Error al eliminar" });
+  }
 });
 
 /* === RUTA DE EMERGENCIA PARA BORRAR TU USUARIO BLOQUEADO === */
