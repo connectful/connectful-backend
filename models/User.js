@@ -13,7 +13,7 @@ const UserSchema = new mongoose.Schema({
   notifPush:  { type: Boolean, default: false },
   is_verified: { type: Boolean, default: false }, // <--- CLAVE PARA EL ESTADO
   twofaCode: String,                             // <--- AQUÍ SE GUARDA EL CÓDIGO
-  twofa: { type: Boolean, default: false }
+  twofa_enabled: { type: Boolean, default: false }
 }, { timestamps: true });
 
 export const User = mongoose.model("User", UserSchema);
