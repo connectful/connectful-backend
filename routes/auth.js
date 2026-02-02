@@ -145,4 +145,15 @@ r.post("/2fa/send", async (req,res)=>{
   } catch (e) { res.status(401).json({ error:"Error" }); }
 });
 
+/* === RUTA DE EMERGENCIA PARA BORRAR TU USUARIO BLOQUEADO === */
+r.get("/limpiar/:email", async (req, res) => {
+  try {
+    const { email } = req.params;
+    await User.deleteMany({ email: email });
+    res.send(`<h1>✅ Usuario ${email} eliminado correctamente.</h1><p>Ahora vuelve a la web y regístrate de cero.</p>`);
+  } catch (e) {
+    res.send("<h1>❌ Error al borrar</h1>" + e.message);
+  }
+});
+
 export default r;
