@@ -4,7 +4,7 @@ import jwt from "jsonwebtoken";
 import crypto from "crypto"; 
 import { User } from "../models/User.js";
 import { auth } from "../utils/auth.js";
-import { sendEmail } from "../utils/email.js"; // <--- Importamos el cartero
+import { sendEmail } from "../utils/email.js"; 
 
 const r = Router();
 
@@ -36,12 +36,20 @@ r.post("/login", async (req,res)=>{
     user.twofaExpires = new Date(Date.now() + 10 * 60 * 1000); 
     await user.save();
 
-    // ENVIAR EMAIL REAL
+    // 1. IMPRIMIR CÓDIGO EN LOGS (Para que puedas entrar si el email falla)
+    console.log("🔑 CÓDIGO SECRETO:", code);
+
+    // 2. ENVIAR EMAIL EN SEGUNDO PLANO (Sin await para no bloquear la web)
     console.log(`Intentando enviar código a ${user.email}...`);
-    await sendEmail(user.email, "Tu código de seguridad - Connectful", `Tu código de acceso es: ${code}`);
+    sendEmail(
+      user.email, 
+      "Tu código de seguridad - Connectful", 
+      `Hola ${user.name || 'Usuario'},\n\nTu código es: ${code}`
+    ).catch(e => console.error("Fallo al enviar email (pero el login continúa):", e));
 
     const temp_token = jwt.sign({ id:user._id.toString(), partial:true }, process.env.JWT_SECRET, { expiresIn:"15m" });
     
+    // Respondemos INMEDIATAMENTE a la web para que abra la ventanita
     return res.json({ 
       ok:true, 
       twofa_required:true, 
@@ -174,8 +182,13 @@ r.post("/2fa/send", async (req,res)=>{
     user.twofaExpires = new Date(Date.now() + 10 * 60 * 1000);
     await user.save();
 
-    await sendEmail(user.email, "Tu código de seguridad", `Código: ${code}`);
+    // Envío en segundo plano también aquí
+    sendEmail(user.email, "Tu código de seguridad", `Código: ${code}`)
+      .catch(e => console.error("Fallo reenvío email:", e));
     
+    // Log de emergencia
+    console.log("🔑 CÓDIGO REENVIADO:", code);
+
     res.json({ ok:true });
   } catch (e) {
     res.status(401).json({ error:"Error" });
