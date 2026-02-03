@@ -136,6 +136,36 @@ r.get("/me", auth, async (req, res) => {
   res.json({ ok: true, user });
 });
 
+/* === ACTUALIZAR PERFIL COMPLETO === */
+r.post("/me", auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
+
+    // Actualizamos los campos que vengan en el body
+    const { name, age, city, pronouns, bio, formato, visibility, interests, preferences, notifications } = req.body;
+
+    if (name !== undefined) user.name = name;
+    if (age !== undefined) user.age = age;
+    if (city !== undefined) user.city = city;
+    if (pronouns !== undefined) user.pronouns = pronouns;
+    if (bio !== undefined) user.bio = bio;
+    if (formato !== undefined) user.formato = formato;
+    if (visibility !== undefined) user.visibility = visibility;
+    if (interests !== undefined) user.intereses = interests;
+    if (preferences !== undefined) user.preferences = preferences;
+    if (notifications !== undefined) user.notifications = notifications;
+
+    await user.save();
+    
+    console.log(`✏️ Perfil actualizado para ${user.email}`);
+    res.json({ ok: true, user });
+  } catch (e) {
+    console.error('Error al guardar perfil:', e);
+    res.status(500).json({ error: "Error al guardar los datos" });
+  }
+});
+
 /* Verificar código 2FA Login */
 r.post("/2fa/verify", async (req,res)=>{
   const { code, temp_token } = req.body ?? {};
