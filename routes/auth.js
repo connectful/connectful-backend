@@ -136,15 +136,16 @@ r.get("/me", auth, async (req, res) => {
   res.json({ ok: true, user });
 });
 
-/* === ACTUALIZAR PERFIL COMPLETO === */
+/* === ACTUALIZAR PERFIL (Sin borrar la foto) === */
 r.post("/me", auth, async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
     if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
 
-    // Actualizamos los campos que vengan en el body
+    // Extraemos los datos del cuerpo de la petición
     const { name, age, city, pronouns, bio, formato, visibility, interests, preferences, notifications } = req.body;
 
+    // Actualizamos SOLO si el usuario ha enviado algo en ese campo
     if (name !== undefined) user.name = name;
     if (age !== undefined) user.age = age;
     if (city !== undefined) user.city = city;
@@ -156,9 +157,14 @@ r.post("/me", auth, async (req, res) => {
     if (preferences !== undefined) user.preferences = preferences;
     if (notifications !== undefined) user.notifications = notifications;
 
+    // ¡IMPORTANTE! No tocamos user.avatar_url aquí
+    // porque eso se gestiona en la ruta de subir foto.
+
     await user.save();
     
-    console.log(`✏️ Perfil actualizado para ${user.email}`);
+    console.log(`✏️ Perfil actualizado para ${user.email} (foto preservada)`);
+    
+    // Devolvemos el usuario actualizado incluyendo la foto que ya tenía
     res.json({ ok: true, user });
   } catch (e) {
     console.error('Error al guardar perfil:', e);
@@ -217,13 +223,13 @@ r.post("/me/avatar", auth, upload.single('avatar'), async (req, res) => {
     // Borrar archivo temporal
     fs.unlinkSync(req.file.path);
 
-    // Guardar URL en MongoDB
+    // Guardar URL en MongoDB (usar avatar_url consistentemente)
     const user = await User.findById(userId);
-    user.avatarUrl = `/uploads/avatars/${fileName}`;
+    user.avatar_url = `/uploads/avatars/${fileName}`;
     await user.save();
 
     console.log(`🖼️ Avatar subido: ${user.email} -> ${fileName}`);
-    res.json({ ok: true, avatar_url: user.avatarUrl });
+    res.json({ ok: true, avatar_url: user.avatar_url });
   } catch (e) {
     console.error("Error subiendo avatar:", e);
     res.status(500).json({ error: "Error al procesar la imagen" });
@@ -236,14 +242,14 @@ r.delete("/me/avatar", auth, async (req, res) => {
     const user = await User.findById(req.user.id);
     
     // Intentar borrar archivo físico si existe
-    if (user.avatarUrl) {
-      const filePath = path.join(process.cwd(), user.avatarUrl);
+    if (user.avatar_url) {
+      const filePath = path.join(process.cwd(), user.avatar_url);
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
       }
     }
     
-    user.avatarUrl = undefined;
+    user.avatar_url = undefined;
     await user.save();
     
     console.log(`❌ Avatar eliminado: ${user.email}`);
