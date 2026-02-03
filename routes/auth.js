@@ -75,14 +75,17 @@ r.post("/login", async (req,res)=>{
   const ok = await bcrypt.compare(password, user.passwordHash);
   if(!ok) return res.status(401).json({ error:"Credenciales inválidas" });
 
-  /* 2FA Check */
-  if(user.twofa_enabled){
+  // DEBUG: Log crítico para ver el estado real del 2FA
+  console.log(`[LOGIN-DEBUG] Usuario: ${email} | 2FA activado: ${user.twofa_enabled} | Tipo: ${typeof user.twofa_enabled}`);
+
+  /* 2FA Check - Comparación estricta */
+  if(user.twofa_enabled === true){
     const code = crypto.randomInt(100000, 999999).toString();
     user.twofaCode = code;
     user.twofaExpires = new Date(Date.now() + 10 * 60 * 1000); 
     await user.save();
 
-    console.log("🔑 CÓDIGO LOGIN:", code); // Chivato
+    console.log(`🔑 CÓDIGO 2FA ENVIADO A ${email}: ${code}`);
 
     sendEmail(user.email, "Tu código de seguridad", `Tu código: ${code}`)
       .catch(e => console.error("Fallo email login:", e));
@@ -92,11 +95,11 @@ r.post("/login", async (req,res)=>{
     return res.json({ ok:true, twofa_required:true, temp_token });
   }
 
-  // Decidir duración del token según "Recordar sesión"
+  // SI NO TIENE 2FA: Login directo
   const expiresIn = remember ? "30d" : "24h";
   const token = jwt.sign({ id:user._id.toString(), role:user.role }, process.env.JWT_SECRET, { expiresIn });
   
-  console.log(`🔑 Login exitoso: ${user.email} (Recordar: ${remember ? 'Sí' : 'No'} - Expira en: ${expiresIn})`);
+  console.log(`🔑 Login exitoso directo (Sin 2FA): ${email} (Token expira: ${expiresIn})`);
   res.json({ ok:true, token, user });
 });
 
@@ -305,9 +308,10 @@ r.post("/2fa", auth, async (req, res) => {
     user.twofa_enabled = enabled;
     await user.save();
 
-    console.log(`🔒 2FA ${enabled ? 'ACTIVADO' : 'DESACTIVADO'} para ${user.email}`);
-    res.json({ ok: true });
+    console.log(`� CONFIG: 2FA para ${user.email} cambiado a: ${enabled} (tipo: ${typeof enabled})`);
+    res.json({ ok: true, twofa_enabled: user.twofa_enabled });
   } catch (e) {
+    console.error("Error en POST /2fa:", e);
     res.status(500).json({ error: "Error al guardar configuración" });
   }
 });
