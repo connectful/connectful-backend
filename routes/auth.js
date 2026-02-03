@@ -180,7 +180,9 @@ r.post("/2fa/verify", async (req,res)=>{
     if(!payload.partial) return res.status(401).json({ error:"Token inválido" });
     const user = await User.findById(payload.id);
     if(!user || user.twofaCode !== code) return res.status(400).json({ error:"Código incorrecto" });
+    if(user.twofaExpires && user.twofaExpires < new Date()) return res.status(400).json({ error:"Código expirado" });
     user.twofaCode = undefined;
+    user.twofaExpires = undefined;
     await user.save();
     const token = jwt.sign({ id:user._id.toString(), role:user.role }, process.env.JWT_SECRET, { expiresIn:"365d" });
     res.json({ ok:true, token, user });
@@ -195,6 +197,7 @@ r.post("/2fa/send", async (req,res)=>{
     const user = await User.findById(payload.id);
     const code = crypto.randomInt(100000, 999999).toString();
     user.twofaCode = code;
+    user.twofaExpires = new Date(Date.now() + 10 * 60 * 1000);
     await user.save();
     console.log("🔑 CÓDIGO REENVIADO:", code);
     sendEmail(user.email, "Código 2FA", `Código: ${code}`).catch(e=>{});
