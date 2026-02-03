@@ -5,15 +5,18 @@ const UserSchema = new mongoose.Schema({
   passwordHash: { type: String, required: true },
   name: String,
   age: Number,
+  city: String,
+  pronouns: String,
+  bio: String,
   formato: String,
-  avatarUrl: String,
-  intereses: [String], // Lista de intereses del usuario
+  visibility: { type: String, default: 'public' },
+  avatar_url: String, // Nombre consistente para evitar confusiones
+  intereses: [String],
+  preferences: { type: Object, default: {} },
+  notifications: { type: Object, default: {} },
   role: { type: String, default: "user" },
-  notifEmail: { type: Boolean, default: false },
-  notifSMS:   { type: Boolean, default: false },
-  notifPush:  { type: Boolean, default: false },
-  is_verified: { type: Boolean, default: false }, // <--- CLAVE PARA EL ESTADO
-  twofaCode: String,                             // <--- AQUÍ SE GUARDA EL CÓDIGO
+  is_verified: { type: Boolean, default: false },
+  twofaCode: String,
   twofa_enabled: { type: Boolean, default: false }
 }, { timestamps: true });
 
