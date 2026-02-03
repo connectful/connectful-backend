@@ -326,21 +326,25 @@ r.get("/limpiar/:email", async (req, res) => {
 });
 
 /* === ACTIVAR/DESACTIVAR 2FA === */
+/* === RUTA PARA GUARDAR EL ESTADO DEL 2FA === */
 r.post("/2fa", auth, async (req, res) => {
   try {
     const { enabled } = req.body;
+    // Buscamos al usuario por el ID que viene en el token
     const user = await User.findById(req.user.id);
     
     if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
 
-    user.twofa_enabled = enabled;
+    // Guardamos como BOOLEANO puro
+    user.twofa_enabled = (enabled === true); 
     await user.save();
 
-    console.log(`� CONFIG: 2FA para ${user.email} cambiado a: ${enabled} (tipo: ${typeof enabled})`);
-    res.json({ ok: true, twofa_enabled: user.twofa_enabled });
+    console.log(`🔐 BASE DE DATOS: 2FA para ${user.email} ahora es: ${user.twofa_enabled}`);
+    
+    res.json({ ok: true, currentState: user.twofa_enabled });
   } catch (e) {
-    console.error("Error en POST /2fa:", e);
-    res.status(500).json({ error: "Error al guardar configuración" });
+    console.error("Error en /2fa:", e);
+    res.status(500).json({ error: "No se pudo guardar la configuración" });
   }
 });
 
