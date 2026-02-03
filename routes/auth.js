@@ -66,41 +66,56 @@ r.post("/verify-email", async (req, res) => {
   }
 });
 
-/* Login */
-r.post("/login", async (req,res)=>{
-  const { email, password, remember } = req.body ?? {};
-  const user = await User.findOne({ email });
-  if(!user) return res.status(401).json({ error:"Credenciales inválidas" });
-  
-  const ok = await bcrypt.compare(password, user.passwordHash);
-  if(!ok) return res.status(401).json({ error:"Credenciales inválidas" });
+/* === LOGIN CON BARRERA 2FA === */
+r.post("/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const user = await User.findOne({ email });
 
-  // DEBUG: Log crítico para ver el estado real del 2FA
-  console.log(`[LOGIN-DEBUG] Usuario: ${email} | 2FA activado: ${user.twofa_enabled} | Tipo: ${typeof user.twofa_enabled}`);
+    if (!user) return res.status(401).json({ error: "Credenciales incorrectas" });
 
-  /* 2FA Check - Comparación estricta */
-  if(user.twofa_enabled === true){
-    const code = crypto.randomInt(100000, 999999).toString();
-    user.twofaCode = code;
-    user.twofaExpires = new Date(Date.now() + 10 * 60 * 1000); 
-    await user.save();
+    const isMatch = await bcrypt.compare(password, user.passwordHash);
+    if (!isMatch) return res.status(401).json({ error: "Credenciales incorrectas" });
 
-    console.log(`🔑 CÓDIGO 2FA ENVIADO A ${email}: ${code}`);
+    console.log(`[LOGIN-DEBUG] Usuario: ${email} | 2FA activado: ${user.twofa_enabled}`);
 
-    sendEmail(user.email, "Tu código de seguridad", `Tu código: ${code}`)
-      .catch(e => console.error("Fallo email login:", e));
+    // SI EL USUARIO TIENE EL 2FA ACTIVADO:
+    if (user.twofa_enabled) {
+      // 1. Generamos código de 6 dígitos
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      
+      // 2. Guardamos el código en la base de datos
+      user.twofaCode = code;
+      await user.save();
 
-    const temp_token = jwt.sign({ id:user._id.toString(), partial:true }, process.env.JWT_SECRET, { expiresIn:"15m" });
-    
-    return res.json({ ok:true, twofa_required:true, temp_token });
+      // 3. Enviamos el email con el código
+      await sendEmail(user.email, "Tu código de acceso Connectful", `Tu código es: ${code}`);
+      console.log(`🔑 CÓDIGO 2FA ENVIADO A ${email}: ${code}`);
+
+      // 4. Generamos un token temporal (solo dura 10 min y no sirve para entrar a la cuenta aún)
+      const temp_token = jwt.sign(
+        { id: user._id, is_2fa_pending: true }, 
+        process.env.JWT_SECRET, 
+        { expiresIn: '10m' }
+      );
+
+      // 5. Respondemos indicando que falta el código
+      return res.json({ 
+        ok: true, 
+        twofa_required: true, 
+        temp_token: temp_token 
+      });
+    }
+
+    // SI NO TIENE 2FA: Login normal directo
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '30d' });
+    console.log(`🔑 Login exitoso directo (Sin 2FA): ${email}`);
+    res.json({ ok: true, token, user });
+
+  } catch (e) {
+    console.error("Error en /login:", e);
+    res.status(500).json({ error: "Error en el servidor" });
   }
-
-  // SI NO TIENE 2FA: Login directo
-  const expiresIn = remember ? "30d" : "24h";
-  const token = jwt.sign({ id:user._id.toString(), role:user.role }, process.env.JWT_SECRET, { expiresIn });
-  
-  console.log(`🔑 Login exitoso directo (Sin 2FA): ${email} (Token expira: ${expiresIn})`);
-  res.json({ ok:true, token, user });
 });
 
 /* Recuperar contraseña (Reenviar código) */
@@ -175,20 +190,33 @@ r.post("/me", auth, async (req, res) => {
   }
 });
 
-/* Verificar código 2FA Login */
-r.post("/2fa/verify", async (req,res)=>{
-  const { code, temp_token } = req.body ?? {};
+/* === NUEVA RUTA: VERIFICAR EL CÓDIGO 2FA === */
+r.post("/2fa/verify", async (req, res) => {
   try {
-    const payload = jwt.verify(temp_token, process.env.JWT_SECRET);
-    if(!payload.partial) return res.status(401).json({ error:"Token inválido" });
-    const user = await User.findById(payload.id);
-    if(!user || user.twofaCode !== code) return res.status(400).json({ error:"Código incorrecto" });
-    if(user.twofaExpires && user.twofaExpires < new Date()) return res.status(400).json({ error:"Código expirado" });
+    const { code, temp_token } = req.body;
+
+    // Verificamos el token temporal
+    const decoded = jwt.verify(temp_token, process.env.JWT_SECRET);
+    if (!decoded.is_2fa_pending) return res.status(401).json({ error: "Token inválido" });
+
+    const user = await User.findById(decoded.id);
+    if (!user || user.twofaCode !== code) {
+      return res.status(400).json({ error: "Código incorrecto" });
+    }
+
+    // Si el código es correcto, limpiamos el código y damos el TOKEN REAL
     user.twofaCode = undefined;
-    user.twofaExpires = undefined;
     await user.save();
-    const token = jwt.sign({ id:user._id.toString(), role:user.role }, process.env.JWT_SECRET, { expiresIn:"365d" });
-    res.json({ ok:true, token, user });
+
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '30d' });
+    console.log(`✅ 2FA verificado correctamente para: ${user.email}`);
+    res.json({ ok: true, token, user });
+
+  } catch (e) {
+    console.error("Error en /2fa/verify:", e);
+    res.status(401).json({ error: "Sesión expirada, vuelve a intentar login" });
+  }
+});
   } catch (e) { res.status(401).json({ error:"Error" }); }
 });
 
