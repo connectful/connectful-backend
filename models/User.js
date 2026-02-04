@@ -11,7 +11,7 @@ const UserSchema = new mongoose.Schema({
   formato: String,
   visibility: { type: String, default: 'public' },
   avatar_url: String, // Nombre consistente para evitar confusiones
-  interests: { type: [String], default: [] }, // Intereses del usuario guardados permanentemente
+  interests: { type: [String], default: [] }, // Array de textos guardados permanentemente
   preferences: { type: Object, default: {} },
   notifications: {
     match: { type: Boolean, default: true },
