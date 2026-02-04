@@ -1,5 +1,5 @@
 import { Router } from "express";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import crypto from "crypto"; 
 import multer from 'multer';
@@ -11,7 +11,6 @@ import { sendEmail } from "../utils/email.js";
 
 const r = Router();
 
-// Configuración Cloudinary
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
@@ -29,7 +28,7 @@ const storage = new CloudinaryStorage({
 
 const upload = multer({ storage: storage });
 
-/* === LOGIN CON BARRERA 2FA === */
+/* === LOGIN === */
 r.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -53,7 +52,7 @@ r.post("/login", async (req, res) => {
   } catch (e) { res.status(500).json({ error: "Error en login" }); }
 });
 
-/* === ACTUALIZAR PERFIL E INTERESES === */
+/* === PERFIL E INTERESES === */
 r.post("/me", auth, async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
@@ -67,10 +66,9 @@ r.post("/me", auth, async (req, res) => {
     if (visibility !== undefined) user.visibility = visibility;
     if (notifications !== undefined) user.notifications = notifications;
     if (preferences !== undefined) user.preferences = preferences;
-
     if (interests !== undefined) {
       user.interests = interests;
-      console.log("💾 Intereses guardados:", interests);
+      console.log("💾 Intereses actualizados:", interests);
     }
 
     await user.save();
@@ -97,7 +95,7 @@ r.delete("/me/avatar", auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: "Error al borrar" }); }
 });
 
-/* === CONFIGURACIÓN 2FA === */
+/* === 2FA === */
 r.post("/2fa", auth, async (req, res) => {
   try {
     const { enabled } = req.body;
@@ -106,6 +104,19 @@ r.post("/2fa", auth, async (req, res) => {
     await user.save();
     res.json({ ok: true, currentState: user.twofa_enabled });
   } catch (e) { res.status(500).json({ error: "Error" }); }
+});
+
+r.post("/2fa/verify", async (req, res) => {
+  try {
+    const { code, temp_token } = req.body;
+    const decoded = jwt.verify(temp_token, process.env.JWT_SECRET);
+    const user = await User.findById(decoded.id);
+    if (!user || user.twofaCode !== code) return res.status(400).json({ error: "Código incorrecto" });
+    user.twofaCode = undefined;
+    await user.save();
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '30d' });
+    res.json({ ok: true, token, user });
+  } catch (e) { res.status(401).json({ error: "Sesión expirada" }); }
 });
 
 /* === OTROS === */
@@ -117,7 +128,7 @@ r.get("/me", auth, async (req, res) => {
 r.post("/register", async (req,res)=>{
   try {
     const { email, password, name, age } = req.body;
-    const passwordHash = await bcrypt.hash(password, 12);
+    const passwordHash = await bcrypt.hash(password, 10);
     const user = await User.create({ email, passwordHash, name, age });
     const code = crypto.randomInt(100000, 999999).toString();
     user.twofaCode = code; 
@@ -136,31 +147,19 @@ r.post("/verify-email", async (req, res) => {
   res.json({ ok: true });
 });
 
-r.post("/2fa/verify", async (req, res) => {
-  try {
-    const { code, temp_token } = req.body;
-    const decoded = jwt.verify(temp_token, process.env.JWT_SECRET);
-    const user = await User.findById(decoded.id);
-    if (!user || user.twofaCode !== code) return res.status(400).json({ error: "Código mal" });
-    user.twofaCode = undefined; await user.save();
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '30d' });
-    res.json({ ok: true, token, user });
-  } catch (e) { res.status(401).json({ error: "Expirado" }); }
-});
-
 r.post("/forgot-password", async (req,res)=>{
   const user = await User.findOne({ email: req.body.email });
   if(!user) return res.status(404).json({error:"No existe"});
   const code = crypto.randomInt(100000, 999999).toString();
   user.twofaCode = code; await user.save();
-  sendEmail(user.email, "Código", `Código: ${code}`).catch(()=>{});
+  sendEmail(user.email, "Código de recuperación", `Código: ${code}`).catch(()=>{});
   res.json({ ok:true });
 });
 
 r.post("/reset-password", async (req,res)=>{
   const user = await User.findOne({ email: req.body.email });
-  if(!user || user.twofaCode !== req.body.code) return res.status(400).json({error:"Mal"});
-  user.passwordHash = await bcrypt.hash(req.body.password, 12);
+  if(!user || user.twofaCode !== req.body.code) return res.status(400).json({error:"Código mal"});
+  user.passwordHash = await bcrypt.hash(req.body.password, 10);
   user.twofaCode = undefined; await user.save();
   res.json({ ok:true });
 });
