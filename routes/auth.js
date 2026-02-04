@@ -186,7 +186,7 @@ r.post("/me", auth, async (req, res) => {
     if (bio !== undefined) user.bio = bio;
     if (formato !== undefined) user.formato = formato;
     if (visibility !== undefined) user.visibility = visibility;
-    if (interests !== undefined) user.intereses = interests;
+    if (interests !== undefined) user.interests = interests; // Guardamos el array de intereses
     if (preferences !== undefined) user.preferences = preferences;
     if (notifications !== undefined) user.notifications = notifications;
 
