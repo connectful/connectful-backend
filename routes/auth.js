@@ -175,8 +175,8 @@ r.post("/me", auth, async (req, res) => {
     if (preferences !== undefined) user.preferences = preferences;
     if (notifications !== undefined) user.notifications = notifications;
 
-    // ¡IMPORTANTE! No tocamos user.avatar_url aquí
-    // porque eso se gestiona en la ruta de subir foto.
+    // IMPORTANTE: No toques user.avatar_url aquí para que no se borre el link
+    // La foto de perfil se gestiona exclusivamente en la ruta de subida de avatar
 
     await user.save();
     
