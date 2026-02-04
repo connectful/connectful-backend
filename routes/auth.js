@@ -3,17 +3,32 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import crypto from "crypto"; 
 import multer from 'multer';
-import sharp from 'sharp';
-import fs from 'fs';
-import path from 'path';
+import { v2 as cloudinary } from 'cloudinary';
+import { CloudinaryStorage } from 'multer-storage-cloudinary';
 import { User } from "../models/User.js";
 import { auth } from "../utils/auth.js";
 import { sendEmail } from "../utils/email.js"; 
 
 const r = Router();
 
-// Configuración de Multer (Guardado temporal)
-const upload = multer({ dest: 'uploads/temp/' });
+// 1. Conexión con tus llaves
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
+
+// 2. Configurar el almacén en la nube
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'connectful_avatars', // Las fotos se guardarán en esta carpeta en tu Cloudinary
+    allowed_formats: ['jpg', 'png', 'webp'],
+    transformation: [{ width: 500, height: 500, crop: 'fill', gravity: 'face' }] // Detecta la cara y recorta centrado
+  },
+});
+
+const upload = multer({ storage: storage });
 
 /* === REGISTRO (AHORA GENERA CÓDIGO) === */
 r.post("/register", async (req,res)=>{
@@ -237,36 +252,21 @@ r.post("/2fa/send", async (req,res)=>{
 });
 
 /* === RUTA PARA SUBIR AVATAR === */
+/* === RUTA DE SUBIDA CON CLOUDINARY === */
 r.post("/me/avatar", auth, upload.single('avatar'), async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ error: "No se subió ninguna imagen" });
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
 
-    const userId = req.user.id;
-    const fileName = `avatar-${userId}-${Date.now()}.webp`;
-    const outputPath = path.join(process.cwd(), 'uploads/avatars', fileName);
-
-    // Crear carpetas si no existen
-    if (!fs.existsSync('uploads/avatars')) fs.mkdirSync('uploads/avatars', { recursive: true });
-
-    // Procesar con Sharp (Redimensionar y convertir a WebP para que pese poco)
-    await sharp(req.file.path)
-      .resize(400, 400, { fit: 'cover' })
-      .webp({ quality: 80 })
-      .toFile(outputPath);
-
-    // Borrar archivo temporal
-    fs.unlinkSync(req.file.path);
-
-    // Guardar URL en MongoDB (usar avatar_url consistentemente)
-    const user = await User.findById(userId);
-    user.avatar_url = `/uploads/avatars/${fileName}`;
+    // req.file.path ahora contiene la URL de Cloudinary (https://res.cloudinary.com/...)
+    user.avatar_url = req.file.path; 
     await user.save();
 
-    console.log(`🖼️ Avatar subido: ${user.email} -> ${fileName}`);
+    console.log(`✅ Foto permanente guardada para ${user.email}`);
     res.json({ ok: true, avatar_url: user.avatar_url });
   } catch (e) {
-    console.error("Error subiendo avatar:", e);
-    res.status(500).json({ error: "Error al procesar la imagen" });
+    console.error("Error subiendo a Cloudinary:", e);
+    res.status(500).json({ error: "Error al subir la imagen a la nube" });
   }
 });
 
