@@ -13,11 +13,7 @@ const UserSchema = new mongoose.Schema({
   avatar_url: String, // Nombre consistente para evitar confusiones
   interests: [String], // Intereses del usuario
   preferences: { type: Object, default: {} },
-  notifications: {
-    match: { type: Boolean, default: true },
-    recordatorio: { type: Boolean, default: true },
-    marketing: { type: Boolean, default: false }
-  },
+  notifications: { type: Object, default: {} },
   role: { type: String, default: "user" },
   is_verified: { type: Boolean, default: false },
   twofaCode: String,
