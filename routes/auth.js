@@ -186,9 +186,14 @@ r.post("/me", auth, async (req, res) => {
     if (bio !== undefined) user.bio = bio;
     if (formato !== undefined) user.formato = formato;
     if (visibility !== undefined) user.visibility = visibility;
-    if (interests !== undefined) user.interests = interests; // Guardamos el array de intereses
     if (preferences !== undefined) user.preferences = preferences;
     if (notifications !== undefined) user.notifications = notifications;
+    
+    // --- PUNTO CRÍTICO: GUARDAR INTERESES ---
+    if (interests !== undefined) {
+      user.interests = interests;
+      console.log("💾 Intereses guardados en Atlas para:", user.email, interests);
+    }
 
     // IMPORTANTE: No toques user.avatar_url aquí para que no se borre el link
     // La foto de perfil se gestiona exclusivamente en la ruta de subida de avatar
@@ -196,7 +201,6 @@ r.post("/me", auth, async (req, res) => {
     await user.save();
     
     console.log(`✏️ Perfil actualizado para ${user.email} (foto preservada)`);
-    console.log(`💾 Intereses guardados:`, user.interests);
     
     // Devolvemos el usuario actualizado incluyendo la foto que ya tenía
     res.json({ ok: true, user });
