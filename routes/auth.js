@@ -271,26 +271,20 @@ r.post("/me/avatar", auth, upload.single('avatar'), async (req, res) => {
 });
 
 /* === RUTA PARA ELIMINAR AVATAR === */
+/* === ELIMINAR FOTO DE PERFIL === */
 r.delete("/me/avatar", auth, async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
-    
-    // Intentar borrar archivo físico si existe
-    if (user.avatar_url) {
-      const filePath = path.join(process.cwd(), user.avatar_url);
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-      }
-    }
-    
-    user.avatar_url = undefined;
+    if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
+
+    // Ponemos la URL de la foto en blanco
+    user.avatar_url = undefined; 
     await user.save();
-    
-    console.log(`❌ Avatar eliminado: ${user.email}`);
-    res.json({ ok: true, message: "Avatar eliminado" });
+
+    console.log(`🗑️ Foto eliminada para: ${user.email}`);
+    res.json({ ok: true, message: "Foto eliminada correctamente" });
   } catch (e) {
-    console.error("Error eliminando avatar:", e);
-    res.status(500).json({ error: "Error al eliminar" });
+    res.status(500).json({ error: "Error al eliminar la foto" });
   }
 });
 
