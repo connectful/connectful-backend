@@ -70,7 +70,7 @@ r.post("/me", auth, async (req, res) => {
 
     if (interests !== undefined) {
       user.interests = interests;
-      console.log(" Intereses guardados:", interests);
+      console.log("💾 Intereses guardados:", interests);
     }
 
     await user.save();
@@ -78,7 +78,7 @@ r.post("/me", auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: "Error al guardar" }); }
 });
 
-/* === SUBIR FOTO A CLOUDINARY === */
+/* === AVATAR === */
 r.post("/me/avatar", auth, upload.single('avatar'), async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
@@ -88,7 +88,16 @@ r.post("/me/avatar", auth, upload.single('avatar'), async (req, res) => {
   } catch (e) { res.status(500).json({ error: "Error subiendo foto" }); }
 });
 
-/* === ACTIVAR/DESACTIVAR 2FA === */
+r.delete("/me/avatar", auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    user.avatar_url = undefined; 
+    await user.save();
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: "Error al borrar" }); }
+});
+
+/* === CONFIGURACIÓN 2FA === */
 r.post("/2fa", auth, async (req, res) => {
   try {
     const { enabled } = req.body;
@@ -99,7 +108,7 @@ r.post("/2fa", auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: "Error" }); }
 });
 
-/* === OTRAS RUTAS === */
+/* === OTROS === */
 r.get("/me", auth, async (req, res) => {
   const user = await User.findById(req.user.id).select("-passwordHash");
   res.json({ ok: true, user });
@@ -144,7 +153,7 @@ r.post("/forgot-password", async (req,res)=>{
   if(!user) return res.status(404).json({error:"No existe"});
   const code = crypto.randomInt(100000, 999999).toString();
   user.twofaCode = code; await user.save();
-  sendEmail(user.email, "Código de recuperación", `Código: ${code}`).catch(()=>{});
+  sendEmail(user.email, "Código", `Código: ${code}`).catch(()=>{});
   res.json({ ok:true });
 });
 
@@ -156,18 +165,9 @@ r.post("/reset-password", async (req,res)=>{
   res.json({ ok:true });
 });
 
-r.delete("/me/avatar", auth, async (req, res) => {
-  try {
-    const user = await User.findById(req.user.id);
-    user.avatar_url = undefined; 
-    await user.save();
-    res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: "Error al borrar" }); }
-});
-
 r.get("/limpiar/:email", async (req, res) => {
   await User.deleteMany({ email: req.params.email });
-  res.send(" Limpio");
+  res.send("✅ Limpio");
 });
 
 export default r;
