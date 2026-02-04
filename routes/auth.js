@@ -196,6 +196,7 @@ r.post("/me", auth, async (req, res) => {
     await user.save();
     
     console.log(`✏️ Perfil actualizado para ${user.email} (foto preservada)`);
+    console.log(`💾 Intereses guardados:`, user.interests);
     
     // Devolvemos el usuario actualizado incluyendo la foto que ya tenía
     res.json({ ok: true, user });
