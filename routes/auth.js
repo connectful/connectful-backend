@@ -189,10 +189,10 @@ r.post("/me", auth, async (req, res) => {
     if (preferences !== undefined) user.preferences = preferences;
     if (notifications !== undefined) user.notifications = notifications;
     
-    // --- PUNTO CRÍTICO: GUARDAR INTERESES ---
+    // --- ACTUALIZACIÓN DE INTERESES ---
     if (interests !== undefined) {
       user.interests = interests;
-      console.log("💾 Intereses guardados en Atlas para:", user.email, interests);
+      console.log("💾 MongoDB Atlas actualizando intereses para:", user.email, interests);
     }
 
     // IMPORTANTE: No toques user.avatar_url aquí para que no se borre el link
