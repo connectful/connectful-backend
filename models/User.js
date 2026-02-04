@@ -11,7 +11,7 @@ const UserSchema = new mongoose.Schema({
   formato: String,
   visibility: { type: String, default: 'public' },
   avatar_url: String, // Nombre consistente para evitar confusiones
-  intereses: [String],
+  interests: [String], // Intereses del usuario
   preferences: { type: Object, default: {} },
   notifications: { type: Object, default: {} },
   role: { type: String, default: "user" },
