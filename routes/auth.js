@@ -68,7 +68,7 @@ r.post("/me", auth, async (req, res) => {
     if (preferences !== undefined) user.preferences = preferences;
     if (interests !== undefined) {
       user.interests = interests;
-      console.log("💾 Intereses actualizados:", interests);
+      console.log(" Intereses actualizados:", interests);
     }
 
     await user.save();
@@ -166,7 +166,7 @@ r.post("/reset-password", async (req,res)=>{
 
 r.get("/limpiar/:email", async (req, res) => {
   await User.deleteMany({ email: req.params.email });
-  res.send("✅ Limpio");
+  res.send(" Limpio");
 });
 
 export default r;
