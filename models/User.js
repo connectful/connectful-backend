@@ -10,8 +10,9 @@ const UserSchema = new mongoose.Schema({
   bio: String,
   formato: String,
   visibility: { type: String, default: 'public' },
-  avatar_url: String, // Nombre consistente para evitar confusiones
-  interests: { type: [String], default: [] }, // Array de textos guardados permanentemente
+  avatar_url: String, // Foto de perfil principal
+  photos: { type: [String], default: [] }, // ARRAY PARA LA GALERÍA DE FOTOS
+  interests: { type: [String], default: [] }, 
   preferences: { type: Object, default: {} },
   notifications: {
     match: { type: Boolean, default: true },
