@@ -11,17 +11,19 @@ import { sendEmail } from "../utils/email.js";
 
 const r = Router();
 
-// VERIFICACIÓN DE LLAVES (Saldrá en los logs de Render al arrancar)
-console.log("☁️ Verificando Cloudinary:", process.env.CLOUDINARY_CLOUD_NAME ? "CONFIGURADO ✅" : "FALTA ❌");
+// --- CONFIGURACIÓN LIMPIA DE CLOUDINARY ---
+const cloudName = (process.env.CLOUDINARY_CLOUD_NAME || "").trim();
+const apiKey = (process.env.CLOUDINARY_API_KEY || "").trim();
+const apiSecret = (process.env.CLOUDINARY_API_SECRET || "").trim();
 
-// 1. Configuración de Cloudinary
 cloudinary.config({
-  cloud_name: (process.env.CLOUDINARY_CLOUD_NAME || "").trim(),
-  api_key: (process.env.CLOUDINARY_API_KEY || "").trim(),
-  api_secret: (process.env.CLOUDINARY_API_SECRET || "").trim()
+  cloud_name: cloudName,
+  api_key: apiKey,
+  api_secret: apiSecret
 });
 
-// 2. Almacén de fotos (Ultra-sencillo para evitar errores)
+console.log("☁️ Intentando conectar a Cloudinary con el usuario:", cloudName);
+
 const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
@@ -32,12 +34,13 @@ const storage = new CloudinaryStorage({
 
 const upload = multer({ storage: storage });
 
-/* === SUBIR AVATAR (Arreglado) === */
+/* === RUTA DE SUBIDA (Blindada) === */
 r.post("/me/avatar", auth, (req, res) => {
   upload.single('avatar')(req, res, async (err) => {
     if (err) {
-      console.error("❌ Error de Cloudinary:", err.message);
-      return res.status(500).json({ error: "Error al procesar imagen: " + err.message });
+      console.error("❌ ERROR CLOUDINARY:", err.message);
+      // Enviamos el error completo para saber qué pasa exactamente
+      return res.status(500).json({ error: "Error en la nube: " + err.message });
     }
 
     try {
@@ -47,21 +50,18 @@ r.post("/me/avatar", auth, (req, res) => {
       user.avatar_url = req.file.path; 
       await user.save();
 
-      console.log(`✅ Foto guardada para ${user.email}`);
       res.json({ ok: true, avatar_url: user.avatar_url });
-
     } catch (e) {
       res.status(500).json({ error: "Fallo en base de datos" });
     }
   });
 });
 
-/* === ACTUALIZAR PERFIL E INTERESES === */
+/* === ACTUALIZAR PERFIL === */
 r.post("/me", auth, async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
     const { name, age, city, bio, pronouns, visibility, interests, notifications, preferences } = req.body;
-
     if (name !== undefined) user.name = name;
     if (age !== undefined) user.age = age;
     if (city !== undefined) user.city = city;
@@ -71,22 +71,19 @@ r.post("/me", auth, async (req, res) => {
     if (notifications !== undefined) user.notifications = notifications;
     if (preferences !== undefined) user.preferences = preferences;
     if (interests !== undefined) user.interests = interests;
-
     await user.save();
     res.json({ ok: true, user });
   } catch (e) { res.status(500).json({ error: "Error al guardar" }); }
 });
 
-/* === LOGIN CON 2FA === */
+/* === LOGIN === */
 r.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
     const user = await User.findOne({ email });
     if (!user) return res.status(401).json({ error: "Credenciales incorrectas" });
-
     const isMatch = await bcrypt.compare(password, user.passwordHash);
     if (!isMatch) return res.status(401).json({ error: "Credenciales incorrectas" });
-
     if (user.twofa_enabled) {
       const code = crypto.randomInt(100000, 999999).toString();
       user.twofaCode = code;
@@ -95,13 +92,12 @@ r.post("/login", async (req, res) => {
       const temp_token = jwt.sign({ id: user._id, is_2fa_pending: true }, process.env.JWT_SECRET, { expiresIn: '10m' });
       return res.json({ ok: true, twofa_required: true, temp_token });
     }
-
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '30d' });
     res.json({ ok: true, token, user });
   } catch (e) { res.status(500).json({ error: "Error en login" }); }
 });
 
-/* === OTRAS RUTAS === */
+/* === OTROS === */
 r.get("/me", auth, async (req, res) => {
   try {
     const user = await User.findById(req.user.id).select("-passwordHash");
