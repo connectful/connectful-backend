@@ -76,49 +76,30 @@ r.post("/me", auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: "Error al guardar" }); }
 });
 
-/* === CAMBIAR CONTRASEÑA (Estando logueado) === */
+/* === CAMBIAR CONTRASEÑA === */
 r.post("/change-password", auth, async (req, res) => {
   try {
     const { current, next } = req.body;
     const user = await User.findById(req.user.id);
-
     if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
-
-    // 1. Verificar que la contraseña actual es correcta
     const isMatch = await bcrypt.compare(current, user.passwordHash);
-    if (!isMatch) {
-      return res.status(400).json({ error: "La contraseña actual no es correcta" });
-    }
-
-    // 2. Cifrar la nueva contraseña
+    if (!isMatch) return res.status(400).json({ error: "La contraseña actual no es correcta" });
     user.passwordHash = await bcrypt.hash(next, 10);
-
-    // 3. Guardar en MongoDB
     await user.save();
-
-    console.log(`🔐 Contraseña actualizada para: ${user.email}`);
-    res.json({ ok: true, message: "Contraseña actualizada con éxito" });
-
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: "Error interno del servidor" });
-  }
+    res.json({ ok: true, message: "Contraseña actualizada" });
+  } catch (e) { res.status(500).json({ error: "Error de servidor" }); }
 });
 
-/* === ELIMINAR CUENTA (NUEVA RUTA) === */
+/* === ELIMINAR CUENTA === */
 r.delete("/me", auth, async (req, res) => {
   try {
     const user = await User.findByIdAndDelete(req.user.id);
     if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
-    
-    console.log(`❌ Cuenta eliminada permanentemente: ${user.email}`);
     res.json({ ok: true, message: "Cuenta eliminada" });
-  } catch (e) {
-    res.status(500).json({ error: "Error al eliminar la cuenta" });
-  }
+  } catch (e) { res.status(500).json({ error: "Error al eliminar" }); }
 });
 
-/* === AVATAR === */
+/* === AVATAR PRINCIPAL === */
 r.post("/me/avatar", auth, upload.single('avatar'), async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
@@ -137,22 +118,42 @@ r.delete("/me/avatar", auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: "Error al borrar" }); }
 });
 
-/* === RUTA PARA ACTIVAR/DESACTIVAR 2FA === */
+/* === GALERÍA DE FOTOS (NUEVAS RUTAS) === */
+r.post("/me/photos", auth, upload.single('avatar'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "No hay imagen" });
+    const user = await User.findById(req.user.id);
+    
+    if (user.photos.length >= 6) {
+      return res.status(400).json({ error: "Máximo 6 fotos permitidas" });
+    }
+
+    user.photos.push(req.file.path); 
+    await user.save();
+    res.json({ ok: true, photos: user.photos });
+  } catch (e) { res.status(500).json({ error: "Error al subir foto a galería" }); }
+});
+
+r.delete("/me/photos", auth, async (req, res) => {
+  try {
+    const { photoUrl } = req.body;
+    const user = await User.findById(req.user.id);
+    user.photos = user.photos.filter(p => p !== photoUrl);
+    await user.save();
+    res.json({ ok: true, photos: user.photos });
+  } catch (e) { res.status(500).json({ error: "Error al borrar de galería" }); }
+});
+
+/* === CONFIGURACIÓN 2FA === */
 r.post("/2fa", auth, async (req, res) => {
   try {
     const { enabled } = req.body; 
     const user = await User.findById(req.user.id);
-    
     if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
-
     user.twofa_enabled = enabled; 
     await user.save();
-
-    console.log(`🔐 2FA actualizado para ${user.email}: ${enabled}`);
     res.json({ ok: true, currentState: user.twofa_enabled });
-  } catch (e) {
-    res.status(500).json({ error: "Error al guardar configuración" });
-  }
+  } catch (e) { res.status(500).json({ error: "Error al guardar configuración" }); }
 });
 
 r.post("/2fa/verify", async (req, res) => {
