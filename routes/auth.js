@@ -76,6 +76,19 @@ r.post("/me", auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: "Error al guardar" }); }
 });
 
+/* === ELIMINAR CUENTA (NUEVA RUTA) === */
+r.delete("/me", auth, async (req, res) => {
+  try {
+    const user = await User.findByIdAndDelete(req.user.id);
+    if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
+    
+    console.log(`❌ Cuenta eliminada permanentemente: ${user.email}`);
+    res.json({ ok: true, message: "Cuenta eliminada" });
+  } catch (e) {
+    res.status(500).json({ error: "Error al eliminar la cuenta" });
+  }
+});
+
 /* === AVATAR === */
 r.post("/me/avatar", auth, upload.single('avatar'), async (req, res) => {
   try {
@@ -95,15 +108,13 @@ r.delete("/me/avatar", auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: "Error al borrar" }); }
 });
 
-/* === RUTA PARA ACTIVAR/DESACTIVAR 2FA === */
+/* === CONFIGURACIÓN 2FA === */
 r.post("/2fa", auth, async (req, res) => {
   try {
-    const { enabled } = req.body; // Recibimos true o false
+    const { enabled } = req.body;
     const user = await User.findById(req.user.id);
-    
     if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
 
-    // Guardamos el estado en el campo del modelo
     user.twofa_enabled = enabled; 
     await user.save();
 
