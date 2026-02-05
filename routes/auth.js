@@ -76,6 +76,35 @@ r.post("/me", auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: "Error al guardar" }); }
 });
 
+/* === CAMBIAR CONTRASEÑA (Estando logueado) === */
+r.post("/change-password", auth, async (req, res) => {
+  try {
+    const { current, next } = req.body;
+    const user = await User.findById(req.user.id);
+
+    if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
+
+    // 1. Verificar que la contraseña actual es correcta
+    const isMatch = await bcrypt.compare(current, user.passwordHash);
+    if (!isMatch) {
+      return res.status(400).json({ error: "La contraseña actual no es correcta" });
+    }
+
+    // 2. Cifrar la nueva contraseña
+    user.passwordHash = await bcrypt.hash(next, 10);
+
+    // 3. Guardar en MongoDB
+    await user.save();
+
+    console.log(`🔐 Contraseña actualizada para: ${user.email}`);
+    res.json({ ok: true, message: "Contraseña actualizada con éxito" });
+
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Error interno del servidor" });
+  }
+});
+
 /* === ELIMINAR CUENTA (NUEVA RUTA) === */
 r.delete("/me", auth, async (req, res) => {
   try {
@@ -108,11 +137,12 @@ r.delete("/me/avatar", auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: "Error al borrar" }); }
 });
 
-/* === CONFIGURACIÓN 2FA === */
+/* === RUTA PARA ACTIVAR/DESACTIVAR 2FA === */
 r.post("/2fa", auth, async (req, res) => {
   try {
-    const { enabled } = req.body;
+    const { enabled } = req.body; 
     const user = await User.findById(req.user.id);
+    
     if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
 
     user.twofa_enabled = enabled; 
