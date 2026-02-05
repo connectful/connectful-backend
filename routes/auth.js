@@ -11,24 +11,79 @@ import { sendEmail } from "../utils/email.js";
 
 const r = Router();
 
+// 1. Configuración de Cloudinary
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
+// 2. Almacén Simplificado (Más robusto)
 const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
     folder: 'connectful_avatars',
-    allowed_formats: ['jpg', 'png', 'webp'],
-    transformation: [{ width: 500, height: 500, crop: 'fill', gravity: 'face' }]
+    allowed_formats: ['jpg', 'png', 'jpeg', 'webp'],
+    transformation: [{ width: 800, crop: 'limit' }] // Solo limitamos el ancho para que no pese
   },
 });
 
 const upload = multer({ storage: storage });
 
-/* === LOGIN === */
+/* === SUBIR AVATAR === */
+r.post("/me/avatar", auth, upload.single('avatar'), async (req, res) => {
+  try {
+    if (!req.file || !req.file.path) {
+      return res.status(400).json({ error: "No se ha subido ningún archivo" });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
+
+    user.avatar_url = req.file.path; 
+    await user.save();
+
+    console.log(`✅ Foto guardada para ${user.email}: ${user.avatar_url}`);
+    res.json({ ok: true, avatar_url: user.avatar_url });
+
+  } catch (e) {
+    console.error("❌ Error en subida:", e);
+    res.status(500).json({ error: "Fallo al procesar la imagen" });
+  }
+});
+
+/* === ELIMINAR AVATAR === */
+r.delete("/me/avatar", auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    user.avatar_url = undefined; 
+    await user.save();
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: "Error al borrar" }); }
+});
+
+/* === ACTUALIZAR PERFIL E INTERESES === */
+r.post("/me", auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    const { name, age, city, bio, pronouns, visibility, interests, notifications, preferences } = req.body;
+
+    if (name !== undefined) user.name = name;
+    if (age !== undefined) user.age = age;
+    if (city !== undefined) user.city = city;
+    if (bio !== undefined) user.bio = bio;
+    if (pronouns !== undefined) user.pronouns = pronouns;
+    if (visibility !== undefined) user.visibility = visibility;
+    if (notifications !== undefined) user.notifications = notifications;
+    if (preferences !== undefined) user.preferences = preferences;
+    if (interests !== undefined) user.interests = interests;
+
+    await user.save();
+    res.json({ ok: true, user });
+  } catch (e) { res.status(500).json({ error: "Error al guardar" }); }
+});
+
+/* === LOGIN CON 2FA === */
 r.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -52,77 +107,12 @@ r.post("/login", async (req, res) => {
   } catch (e) { res.status(500).json({ error: "Error en login" }); }
 });
 
-/* === PERFIL E INTERESES === */
-r.post("/me", auth, async (req, res) => {
-  try {
-    const user = await User.findById(req.user.id);
-    const { name, age, city, bio, pronouns, visibility, interests, notifications, preferences } = req.body;
-
-    if (name !== undefined) user.name = name;
-    if (age !== undefined) user.age = age;
-    if (city !== undefined) user.city = city;
-    if (bio !== undefined) user.bio = bio;
-    if (pronouns !== undefined) user.pronouns = pronouns;
-    if (visibility !== undefined) user.visibility = visibility;
-    if (notifications !== undefined) user.notifications = notifications;
-    if (preferences !== undefined) user.preferences = preferences;
-    if (interests !== undefined) {
-      user.interests = interests;
-      console.log(" Intereses actualizados:", interests);
-    }
-
-    await user.save();
-    res.json({ ok: true, user });
-  } catch (e) { res.status(500).json({ error: "Error al guardar" }); }
-});
-
-/* === AVATAR === */
-r.post("/me/avatar", auth, upload.single('avatar'), async (req, res) => {
-  try {
-    const user = await User.findById(req.user.id);
-    user.avatar_url = req.file.path; 
-    await user.save();
-    res.json({ ok: true, avatar_url: user.avatar_url });
-  } catch (e) { res.status(500).json({ error: "Error subiendo foto" }); }
-});
-
-r.delete("/me/avatar", auth, async (req, res) => {
-  try {
-    const user = await User.findById(req.user.id);
-    user.avatar_url = undefined; 
-    await user.save();
-    res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: "Error al borrar" }); }
-});
-
-/* === 2FA === */
-r.post("/2fa", auth, async (req, res) => {
-  try {
-    const { enabled } = req.body;
-    const user = await User.findById(req.user.id);
-    user.twofa_enabled = (enabled === true); 
-    await user.save();
-    res.json({ ok: true, currentState: user.twofa_enabled });
-  } catch (e) { res.status(500).json({ error: "Error" }); }
-});
-
-r.post("/2fa/verify", async (req, res) => {
-  try {
-    const { code, temp_token } = req.body;
-    const decoded = jwt.verify(temp_token, process.env.JWT_SECRET);
-    const user = await User.findById(decoded.id);
-    if (!user || user.twofaCode !== code) return res.status(400).json({ error: "Código incorrecto" });
-    user.twofaCode = undefined;
-    await user.save();
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '30d' });
-    res.json({ ok: true, token, user });
-  } catch (e) { res.status(401).json({ error: "Sesión expirada" }); }
-});
-
-/* === OTROS === */
+/* === OTRAS RUTAS === */
 r.get("/me", auth, async (req, res) => {
-  const user = await User.findById(req.user.id).select("-passwordHash");
-  res.json({ ok: true, user });
+  try {
+    const user = await User.findById(req.user.id).select("-passwordHash");
+    res.json({ ok: true, user });
+  } catch (e) { res.status(500).json({ error: "Error" }); }
 });
 
 r.post("/register", async (req,res)=>{
@@ -147,18 +137,40 @@ r.post("/verify-email", async (req, res) => {
   res.json({ ok: true });
 });
 
+r.post("/2fa/verify", async (req, res) => {
+  try {
+    const { code, temp_token } = req.body;
+    const decoded = jwt.verify(temp_token, process.env.JWT_SECRET);
+    const user = await User.findById(decoded.id);
+    if (!user || user.twofaCode !== code) return res.status(400).json({ error: "Código incorrecto" });
+    user.twofaCode = undefined; await user.save();
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '30d' });
+    res.json({ ok: true, token, user });
+  } catch (e) { res.status(401).json({ error: "Sesión expirada" }); }
+});
+
+r.post("/2fa", auth, async (req, res) => {
+  try {
+    const { enabled } = req.body;
+    const user = await User.findById(req.user.id);
+    user.twofa_enabled = (enabled === true); 
+    await user.save();
+    res.json({ ok: true, currentState: user.twofa_enabled });
+  } catch (e) { res.status(500).json({ error: "Error" }); }
+});
+
 r.post("/forgot-password", async (req,res)=>{
   const user = await User.findOne({ email: req.body.email });
   if(!user) return res.status(404).json({error:"No existe"});
   const code = crypto.randomInt(100000, 999999).toString();
   user.twofaCode = code; await user.save();
-  sendEmail(user.email, "Código de recuperación", `Código: ${code}`).catch(()=>{});
+  sendEmail(user.email, "Código", `Código: ${code}`).catch(()=>{});
   res.json({ ok:true });
 });
 
 r.post("/reset-password", async (req,res)=>{
   const user = await User.findOne({ email: req.body.email });
-  if(!user || user.twofaCode !== req.body.code) return res.status(400).json({error:"Código mal"});
+  if(!user || user.twofaCode !== req.body.code) return res.status(400).json({error:"Mal"});
   user.passwordHash = await bcrypt.hash(req.body.password, 10);
   user.twofaCode = undefined; await user.save();
   res.json({ ok:true });
@@ -166,7 +178,7 @@ r.post("/reset-password", async (req,res)=>{
 
 r.get("/limpiar/:email", async (req, res) => {
   await User.deleteMany({ email: req.params.email });
-  res.send(" Limpio");
+  res.send("✅ Limpio");
 });
 
 export default r;
