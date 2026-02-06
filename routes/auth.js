@@ -11,6 +11,7 @@ import { sendEmail } from "../utils/email.js";
 
 const r = Router();
 
+// 1. CONFIGURACIÓN CLOUDINARY
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
@@ -52,11 +53,11 @@ r.post("/login", async (req, res) => {
   } catch (e) { res.status(500).json({ error: "Error en login" }); }
 });
 
-/* === PERFIL E INTERESES === */
+/* === PERFIL, INTERESES, PREFERENCIAS Y NOTIFICACIONES === */
 r.post("/me", auth, async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
-    const { name, age, city, bio, pronouns, visibility, interests, notifications, preferences } = req.body;
+    const { name, age, city, bio, pronouns, visibility, interests, notifications, preferences, formato } = req.body;
 
     if (name !== undefined) user.name = name;
     if (age !== undefined) user.age = age;
@@ -66,14 +67,16 @@ r.post("/me", auth, async (req, res) => {
     if (visibility !== undefined) user.visibility = visibility;
     if (notifications !== undefined) user.notifications = notifications;
     if (preferences !== undefined) user.preferences = preferences;
+    if (formato !== undefined) user.formato = formato;
+
+    // Guardar intereses (Array de textos)
     if (interests !== undefined) {
       user.interests = interests;
-      console.log(" Intereses actualizados:", interests);
     }
 
     await user.save();
     res.json({ ok: true, user });
-  } catch (e) { res.status(500).json({ error: "Error al guardar" }); }
+  } catch (e) { res.status(500).json({ error: "Error al guardar perfil" }); }
 });
 
 /* === CAMBIAR CONTRASEÑA === */
@@ -82,8 +85,10 @@ r.post("/change-password", auth, async (req, res) => {
     const { current, next } = req.body;
     const user = await User.findById(req.user.id);
     if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
+
     const isMatch = await bcrypt.compare(current, user.passwordHash);
     if (!isMatch) return res.status(400).json({ error: "La contraseña actual no es correcta" });
+
     user.passwordHash = await bcrypt.hash(next, 10);
     await user.save();
     res.json({ ok: true, message: "Contraseña actualizada" });
@@ -95,11 +100,12 @@ r.delete("/me", auth, async (req, res) => {
   try {
     const user = await User.findByIdAndDelete(req.user.id);
     if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
+    console.log(`❌ Cuenta eliminada permanentemente: ${user.email}`);
     res.json({ ok: true, message: "Cuenta eliminada" });
   } catch (e) { res.status(500).json({ error: "Error al eliminar" }); }
 });
 
-/* === AVATAR PRINCIPAL === */
+/* === FOTO DE PERFIL PRINCIPAL === */
 r.post("/me/avatar", auth, upload.single('avatar'), async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
@@ -118,20 +124,17 @@ r.delete("/me/avatar", auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: "Error al borrar" }); }
 });
 
-/* === GALERÍA DE FOTOS (NUEVAS RUTAS) === */
+/* === GALERÍA DE FOTOS === */
 r.post("/me/photos", auth, upload.single('avatar'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: "No hay imagen" });
     const user = await User.findById(req.user.id);
-    
-    if (user.photos.length >= 6) {
-      return res.status(400).json({ error: "Máximo 6 fotos permitidas" });
-    }
+    if (user.photos.length >= 6) return res.status(400).json({ error: "Máximo 6 fotos permitidas" });
 
     user.photos.push(req.file.path); 
     await user.save();
     res.json({ ok: true, photos: user.photos });
-  } catch (e) { res.status(500).json({ error: "Error al subir foto a galería" }); }
+  } catch (e) { res.status(500).json({ error: "Error al subir a galería" }); }
 });
 
 r.delete("/me/photos", auth, async (req, res) => {
@@ -144,16 +147,15 @@ r.delete("/me/photos", auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: "Error al borrar de galería" }); }
 });
 
-/* === CONFIGURACIÓN 2FA === */
+/* === SEGURIDAD 2FA === */
 r.post("/2fa", auth, async (req, res) => {
   try {
     const { enabled } = req.body; 
     const user = await User.findById(req.user.id);
-    if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
     user.twofa_enabled = enabled; 
     await user.save();
     res.json({ ok: true, currentState: user.twofa_enabled });
-  } catch (e) { res.status(500).json({ error: "Error al guardar configuración" }); }
+  } catch (e) { res.status(500).json({ error: "Error al guardar configuración 2FA" }); }
 });
 
 r.post("/2fa/verify", async (req, res) => {
@@ -169,7 +171,7 @@ r.post("/2fa/verify", async (req, res) => {
   } catch (e) { res.status(401).json({ error: "Sesión expirada" }); }
 });
 
-/* === OTROS === */
+/* === OTROS (REGISTRO, RECOVERY, ETC) === */
 r.get("/me", auth, async (req, res) => {
   const user = await User.findById(req.user.id).select("-passwordHash");
   res.json({ ok: true, user });
@@ -177,9 +179,9 @@ r.get("/me", auth, async (req, res) => {
 
 r.post("/register", async (req,res)=>{
   try {
-    const { email, password, name, age } = req.body;
+    const { email, password, name, age, formato } = req.body;
     const passwordHash = await bcrypt.hash(password, 10);
-    const user = await User.create({ email, passwordHash, name, age });
+    const user = await User.create({ email, passwordHash, name, age, formato });
     const code = crypto.randomInt(100000, 999999).toString();
     user.twofaCode = code; 
     await user.save();
@@ -191,7 +193,7 @@ r.post("/register", async (req,res)=>{
 r.post("/verify-email", async (req, res) => {
   const { email, code } = req.body;
   const user = await User.findOne({ email });
-  if (!user || user.twofaCode !== code) return res.status(400).json({ error: "Código mal" });
+  if (!user || user.twofaCode !== code) return res.status(400).json({ error: "Código incorrecto" });
   user.is_verified = true; user.twofaCode = undefined;
   await user.save();
   res.json({ ok: true });
@@ -199,16 +201,16 @@ r.post("/verify-email", async (req, res) => {
 
 r.post("/forgot-password", async (req,res)=>{
   const user = await User.findOne({ email: req.body.email });
-  if(!user) return res.status(404).json({error:"No existe"});
+  if(!user) return res.status(404).json({error:"Email no existe"});
   const code = crypto.randomInt(100000, 999999).toString();
   user.twofaCode = code; await user.save();
-  sendEmail(user.email, "Código de recuperación", `Código: ${code}`).catch(()=>{});
+  sendEmail(user.email, "Recuperación de contraseña", `Código: ${code}`).catch(()=>{});
   res.json({ ok:true });
 });
 
 r.post("/reset-password", async (req,res)=>{
   const user = await User.findOne({ email: req.body.email });
-  if(!user || user.twofaCode !== req.body.code) return res.status(400).json({error:"Código mal"});
+  if(!user || user.twofaCode !== req.body.code) return res.status(400).json({error:"Código incorrecto"});
   user.passwordHash = await bcrypt.hash(req.body.password, 10);
   user.twofaCode = undefined; await user.save();
   res.json({ ok:true });
@@ -216,7 +218,7 @@ r.post("/reset-password", async (req,res)=>{
 
 r.get("/limpiar/:email", async (req, res) => {
   await User.deleteMany({ email: req.params.email });
-  res.send(" Limpio");
+  res.send("✅ Usuario limpiado de la DB");
 });
 
 export default r;
